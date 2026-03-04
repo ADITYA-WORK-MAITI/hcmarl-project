@@ -1,0 +1,26 @@
+# HC-MARL Requirements
+# Core dependencies for Phase 1 (core modules)
+
+# Numerical computing
+numpy>=1.24.0
+scipy>=1.10.0
+
+# QP solver for ECBF safety filter
+cvxpy>=1.4.0
+osqp>=0.6.3
+
+# Configuration
+pyyaml>=6.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Logging and visualization (used from Phase 2 onward)
+matplotlib>=3.7.0
+wandb>=0.16.0
+
+# RL framework (used from Phase 3 onward)
+# torch>=2.0.0
+# gymnasium>=0.29.0
+# pettingzoo>=1.24.0

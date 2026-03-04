@@ -1,0 +1,61 @@
+# ============================================================
+# HC-MARL .gitignore
+# ============================================================
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ---------- Virtual environments ----------
+venv/
+.venv/
+env/
+
+# ---------- Jupyter ----------
+.ipynb_checkpoints/
+
+# ---------- IDE ----------
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+
+# ---------- Experiment outputs ----------
+checkpoints/
+logs/
+results/
+figures/*.png
+wandb/
+
+# ---------- Large files ----------
+*.pt
+*.pth
+*.ckpt
+*.npy
+*.npz
+
+# ---------- LaTeX ----------
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.synctex.gz
+paper/*.fdb_latexmk
+paper/*.fls
+
+# ---------- Secrets ----------
+.env
+*.key

@@ -1,0 +1,81 @@
+# ==========================================================================
+# HC-MARL Default Configuration
+# ==========================================================================
+#
+# This file configures the end-to-end pipeline (Section 7.3) with
+# reasonable defaults for a warehouse human-robot collaboration scenario.
+#
+# All theta_max values satisfy Assumption 5.5 (Eq 26):
+#   theta_max >= F / (F + R*r)  for each muscle group.
+# ==========================================================================
+
+# -- Workers --
+num_workers: 4
+
+# -- Muscle groups to track per worker --
+# Subset of {shoulder, ankle, knee, elbow, trunk, grip}
+muscle_names:
+  - shoulder
+  - elbow
+  - grip
+
+# -- Simulation parameters --
+dt: 1.0        # Integration time step [minutes]
+kp: 10.0       # Baseline neural drive gain (Eq 35)
+
+# -- Productive tasks (Def 7.1) --
+# Each task specifies target loads (fraction of MVC) per muscle group.
+tasks:
+  - name: box_lift_overhead
+    demands:
+      shoulder: 0.50
+      elbow: 0.30
+      grip: 0.60
+
+  - name: carry_heavy
+    demands:
+      shoulder: 0.20
+      elbow: 0.15
+      grip: 0.45
+
+  - name: sorting_light
+    demands:
+      shoulder: 0.10
+      elbow: 0.10
+      grip: 0.25
+
+  - name: packing
+    demands:
+      shoulder: 0.15
+      elbow: 0.20
+      grip: 0.35
+
+# -- ECBF Safety Filter Parameters (Section 5) --
+# Per-muscle configuration. theta_max must satisfy Eq 26.
+# Reference thresholds (Table 2):
+#   shoulder: theta_min_max = 62.7%
+#   elbow:    theta_min_max = 39.3%
+#   grip:     theta_min_max = 19.5%
+ecbf:
+  shoulder:
+    theta_max: 0.70    # Above 62.7% threshold (Eq 26)
+    alpha1: 0.05       # ECBF gain (class-K, Eq 16)
+    alpha2: 0.05       # ECBF gain (class-K, Eq 17)
+    alpha3: 0.10       # Resting-floor CBF gain (Eq 23)
+
+  elbow:
+    theta_max: 0.45    # Above 39.3% threshold (Eq 26)
+    alpha1: 0.05
+    alpha2: 0.05
+    alpha3: 0.10
+
+  grip:
+    theta_max: 0.25    # Above 19.5% threshold (Eq 26)
+    alpha1: 0.05
+    alpha2: 0.05
+    alpha3: 0.10
+
+# -- NSWF Allocator Parameters (Section 6) --
+nswf:
+  kappa: 1.0         # Disagreement utility scaling (Eq 32)
+  epsilon: 0.001     # Rest-task surplus (Eq 31)
