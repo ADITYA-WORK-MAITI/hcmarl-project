@@ -34,7 +34,6 @@ Thumbs.db
 
 # ---------- Experiment outputs ----------
 checkpoints/
-logs/
 results/
 figures/*.png
 wandb/
