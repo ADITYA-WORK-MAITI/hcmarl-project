@@ -1,0 +1,81 @@
+# HC-MARL Training Configuration
+# Phase 2: MAPPO Training + Baselines
+# Phase 3: MMICRL + Validation
+
+# --- Environment ---
+environment:
+  n_workers: 4
+  max_steps: 60
+  dt: 1.0
+  kappa: 1.0
+
+  muscle_groups:
+    shoulder: {F: 0.0146, R: 0.00058, r: 15}
+    elbow:    {F: 0.00912, R: 0.00094, r: 15}
+    grip:     {F: 0.00794, R: 0.00109, r: 30}
+
+  theta_max:
+    shoulder: 0.70
+    elbow: 0.45
+    grip: 0.25
+
+  tasks:
+    heavy_lift:  {shoulder: 0.50, elbow: 0.30, grip: 0.60}
+    light_sort:  {shoulder: 0.10, elbow: 0.15, grip: 0.20}
+    carry:       {shoulder: 0.30, elbow: 0.20, grip: 0.40}
+    rest:        {shoulder: 0.00, elbow: 0.00, grip: 0.00}
+
+# --- MAPPO ---
+mappo:
+  hidden_dim: 64
+  critic_hidden_dim: 128
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  lr_actor: 0.0003
+  lr_critic: 0.001
+  buffer_size: 2048
+  batch_size: 256
+  n_epochs: 10
+  max_grad_norm: 0.5
+  entropy_coeff: 0.01
+
+# --- ECBF ---
+ecbf:
+  alpha1: 0.5
+  alpha2: 0.5
+  alpha3: 0.5
+  kp: 10.0
+
+# --- Experiments ---
+experiments:
+  n_training_episodes: 500
+  n_eval_episodes: 5
+  n_seeds: 5
+  baseline_comparison: true
+  ablation_studies: true
+  scaling_tests:
+    worker_counts: [3, 4, 6, 8, 12]
+
+# --- MMICRL (Phase 3) ---
+mmicrl:
+  n_types: 3
+  lambda1: 1.0
+  lambda2: 1.0
+  n_iterations: 100
+  learning_rate: 0.01
+  demo_episodes_per_worker: 50
+
+# --- Online Adaptation ---
+online_adaptation:
+  ema_alpha: 0.01
+  tighten_factor: 0.95
+  alert_fraction: 0.8
+
+# --- Logging ---
+logging:
+  use_wandb: false
+  project_name: "hcmarl"
+  log_interval: 10
+  save_interval: 50
+  results_dir: "results"
