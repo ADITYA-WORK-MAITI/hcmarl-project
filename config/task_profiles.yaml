@@ -1,0 +1,52 @@
+# HC-MARL Task Demand Profiles
+# T_L,g: fraction of MVC demanded per muscle group per task (Eq 34)
+# Values based on ergonomic literature and warehouse task analysis
+
+task_profiles:
+  heavy_lift:
+    shoulder: 0.50
+    ankle: 0.10
+    knee: 0.40
+    elbow: 0.30
+    trunk: 0.35
+    grip: 0.60
+
+  light_sort:
+    shoulder: 0.10
+    ankle: 0.05
+    knee: 0.05
+    elbow: 0.15
+    trunk: 0.10
+    grip: 0.20
+
+  carry:
+    shoulder: 0.30
+    ankle: 0.20
+    knee: 0.25
+    elbow: 0.20
+    trunk: 0.25
+    grip: 0.40
+
+  overhead_reach:
+    shoulder: 0.60
+    ankle: 0.05
+    knee: 0.10
+    elbow: 0.35
+    trunk: 0.20
+    grip: 0.30
+
+  push_cart:
+    shoulder: 0.20
+    ankle: 0.15
+    knee: 0.20
+    elbow: 0.15
+    trunk: 0.30
+    grip: 0.25
+
+  rest:
+    shoulder: 0.00
+    ankle: 0.00
+    knee: 0.00
+    elbow: 0.00
+    trunk: 0.00
+    grip: 0.00
