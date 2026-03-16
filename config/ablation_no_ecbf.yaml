@@ -1,0 +1,73 @@
+# HC-MARL Ablation: no_ecbf
+# Same as hcmarl_full_config.yaml except the ablated component
+
+environment:
+  n_workers: 6
+  max_steps: 480
+  dt: 1.0
+  kappa: 1.0
+  muscle_groups:
+    shoulder: {F: 0.0146, R: 0.00058, r: 15}
+    ankle:    {F: 0.00589, R: 0.0182, r: 15}
+    knee:     {F: 0.0150, R: 0.00175, r: 15}
+    elbow:    {F: 0.00912, R: 0.00094, r: 15}
+    trunk:    {F: 0.00657, R: 0.00354, r: 15}
+    grip:     {F: 0.00794, R: 0.00109, r: 30}
+  theta_max:
+    shoulder: 0.70
+    ankle: 0.80
+    knee: 0.60
+    elbow: 0.45
+    trunk: 0.65
+    grip: 0.25
+  tasks:
+    heavy_lift:     {shoulder: 0.50, ankle: 0.10, knee: 0.40, elbow: 0.30, trunk: 0.35, grip: 0.60}
+    light_sort:     {shoulder: 0.10, ankle: 0.05, knee: 0.05, elbow: 0.15, trunk: 0.10, grip: 0.20}
+    carry:          {shoulder: 0.30, ankle: 0.20, knee: 0.25, elbow: 0.20, trunk: 0.25, grip: 0.40}
+    overhead_reach: {shoulder: 0.60, ankle: 0.05, knee: 0.10, elbow: 0.35, trunk: 0.20, grip: 0.30}
+    push_cart:      {shoulder: 0.20, ankle: 0.15, knee: 0.20, elbow: 0.15, trunk: 0.30, grip: 0.25}
+    rest:           {shoulder: 0.00, ankle: 0.00, knee: 0.00, elbow: 0.00, trunk: 0.00, grip: 0.00}
+
+training:
+  total_steps: 5000000
+  eval_interval: 50000
+  checkpoint_interval: 500000
+  n_eval_episodes: 10
+  seeds: [0, 1, 2, 3, 4]
+
+algorithm:
+  lr_actor: 0.0003
+  lr_critic: 0.001
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  entropy_coeff: 0.01
+  max_grad_norm: 0.5
+  n_epochs: 10
+  batch_size: 256
+  hidden_dim: 64
+  critic_hidden_dim: 128
+
+ecbf:
+  enabled: false
+  alpha1: 0.5
+  alpha2: 0.5
+  alpha3: 0.5
+
+nswf:
+  enabled: true
+  allocation: nswf
+
+mmicrl:
+  enabled: true
+  use_fixed_theta: false
+
+disagreement:
+  divergent: true
+  type: divergent
+
+ablation: "no_ecbf"
+
+logging:
+  use_wandb: true
+  project_name: "hcmarl-neurips2026"
