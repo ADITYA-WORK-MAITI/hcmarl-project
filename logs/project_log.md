@@ -74,4 +74,76 @@ git commit -m "Add project log (logs/project_log.md) — session records from 20
 
 ---
 
+## 2026-03-15 | ~00:00 IST — Phase 2+3 Integration
+
+Integrated Phase 2 (warehouse environment, MAPPO agent, baselines, training pipeline) and Phase 3 (MM-ICRL inverse constrained RL, online adaptation, simulated safety-gym validation) into the project. Six source modules were copied from `C:\Users\admin\Desktop\hcmarl_phase2_phase3\src\` into `hcmarl/`, two test files into `tests/`, and one config file into `config/`. All `from src.` imports were replaced with `from hcmarl.` across the 3 affected files (training.py, test_phase2.py, test_phase3.py). The `gymnasium` package was installed into the venv. The full test suite ran clean: 155 passed (120 Phase 1 + 17 Phase 2 + 18 Phase 3), 0 failed, 8 warnings (same known CVXPY solver warnings as before). Nine files were committed.
+
+**Commands executed (in order):**
+```
+cp hcmarl_phase2_phase3/src/{warehouse_env,mappo_agent,baselines,training,mmicrl,safety_gym_validation}.py hcmarl/
+cp hcmarl_phase2_phase3/tests/{test_phase2,test_phase3}.py tests/
+cp hcmarl_phase2_phase3/config/training.yaml config/
+sed -i 's/from src\./from hcmarl./g' hcmarl/training.py tests/test_phase2.py tests/test_phase3.py
+source venv/Scripts/activate && pip install gymnasium
+pytest tests/ -v
+git add config/training.yaml hcmarl/{baselines,mappo_agent,mmicrl,safety_gym_validation,training,warehouse_env}.py tests/{test_phase2,test_phase3}.py
+git commit -m "Phase 2+3: warehouse env, MAPPO agent, baselines, MM-ICRL, safety validation (9 files, 155 tests passing)"
+```
+
+**Commit:** `9d65d32` — 2026-03-15 IST
+**Files committed:** 9 | **Insertions:** 2791 | **Tests:** 155 passed, 0 failed
+
+---
+
+## 2026-03-15 | ~01:00 IST — Phase 2+3 Complete Integration (envs, agents, baselines)
+
+Integrated the remaining Phase 2 and Phase 3 modules from `C:\Users\admin\Desktop\phase23\`. Created three new subpackages: `hcmarl/envs/` (PettingZoo parallel wrapper, task profiles, reward functions, safety-gym ECBF wrapper), `hcmarl/agents/` (MAPPO, IPPO, MAPPO-Lagrangian, actor-critic networks, full HC-MARL agent), and `hcmarl/baselines/` (OmniSafe and SafePO wrappers). Also added `hcmarl/logger.py` (W&B + CSV logging with 9 metrics), 8 config YAML files, 6 new test files, 4 scripts, and 1 docs file.
+
+Two compatibility issues were resolved. First, the new `hcmarl/baselines/` package directory shadowed the existing `hcmarl/baselines.py` module — solved by copying the old module into the package as `_legacy.py` and re-exporting all its symbols from `__init__.py`. Second, `hcmarl/envs/warehouse_env.py` didn't exist in the source — created a thin wrapper that re-exports `SingleWorkerWarehouseEnv` as `WarehouseEnv`. Third, `pettingzoo_wrapper.py` called `MuscleParams.get_default()` which doesn't exist — fixed to use `get_muscle()` from `hcmarl.three_cc_r`. PyTorch CPU was installed. All 175 tests passed (120 Phase 1 + 35 earlier Phase 2/3 + 20 new).
+
+**Commands executed (in order):**
+```
+mkdir -p hcmarl/envs hcmarl/agents hcmarl/baselines scripts docs
+cp phase23/hcmarl/envs/*.py hcmarl/envs/
+cp phase23/hcmarl/agents/*.py hcmarl/agents/
+cp phase23/hcmarl/baselines/*.py hcmarl/baselines/
+cp phase23/hcmarl/logger.py hcmarl/
+cp phase23/config/*.yaml config/
+cp phase23/tests/*.py tests/
+cp phase23/scripts/* scripts/
+cp phase23/docs/* docs/
+# created hcmarl/envs/warehouse_env.py (thin wrapper)
+# copied hcmarl/baselines.py → hcmarl/baselines/_legacy.py
+# updated hcmarl/baselines/__init__.py to re-export legacy symbols
+# fixed pettingzoo_wrapper.py: MuscleParams.get_default() → get_muscle()
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pytest tests/ -v
+git add <36 files>
+git commit
+```
+
+**Commit:** `5f2f078` — 2026-03-15 IST
+**Files committed:** 36 | **Insertions:** 1627 | **Tests:** 175 passed, 0 failed
+
+---
+
+## 2026-03-16 | ~00:00 IST — Phase 2+3 Full Verification (3 tasks)
+
+Ran the three remaining Phase 2+3 verification tasks at full specification, no shortcuts. Task 1: the 10K-episode stress test (`scripts/stress_test_env.py`) completed all 10,000 episodes in 1253.4 seconds with peak memory stable at 21.6 MB throughout — no crashes, no memory leak. Task 2: created `notebooks/env_smoke_test.ipynb` programmatically using nbformat with 5 code cells. The notebook runs 1 episode (60 steps, 4 workers, random actions) on the PettingZoo wrapper, verifies the 3CC-r conservation law MR+MA+MF=1 at every step for all workers and muscles (max error 1.19e-07, floating-point level), and produces two figures: `smoke_fig1_shoulder_dynamics.png` (MR/MA/MF trajectories for shoulder) and `smoke_fig2_fatigue_heatmap.png` (fatigue heatmap across all 6 muscles). The notebook was executed via `jupyter nbconvert` with the `hcmarl` kernel. Task 3: `scripts/verify_all_methods.py` ran all 10 methods (HC-MARL, MAPPO, IPPO, MAPPO-Lag, PPO-Lag, CPO, MACPO, FOCOPS, Random, FixedSchedule) for 100 steps each — all passed with no crashes. Updated `docs/milestone_1_report.md` with full verification results.
+
+**Commands executed (in order):**
+```
+source venv/Scripts/activate && python scripts/stress_test_env.py          # Task 1 (background)
+source venv/Scripts/activate && python scripts/verify_all_methods.py       # Task 3 (background)
+python scripts/create_env_smoke_test.py                                    # Task 2: create notebook
+jupyter nbconvert --to notebook --execute notebooks/env_smoke_test.ipynb \
+    --output env_smoke_test_executed.ipynb \
+    --ExecutePreprocessor.timeout=120 --ExecutePreprocessor.kernel_name=hcmarl
+```
+
+**Files changed:** 3 (`docs/milestone_1_report.md`, `notebooks/env_smoke_test.ipynb`, `scripts/create_env_smoke_test.py`)
+**Tests:** 175 passed, 0 failed (unchanged)
+
+---
+
 <!-- APPEND NEW ENTRIES BELOW THIS LINE -->
