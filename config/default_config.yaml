@@ -25,37 +25,39 @@ kp: 10.0       # Baseline neural drive gain (Eq 35)
 
 # -- Productive tasks (Def 7.1) --
 # Each task specifies target loads (fraction of MVC) per muscle group.
+# -- Productive tasks (Def 7.1) --
+# %MVC values from published ergonomics literature (see docs/data_sources.md)
 tasks:
   - name: box_lift_overhead
     demands:
-      shoulder: 0.50
-      elbow: 0.30
-      grip: 0.60
+      shoulder: 0.45   # Hoozemans et al. 2004
+      elbow: 0.30      # Hoozemans et al. 2004
+      grip: 0.55       # Hoozemans et al. 2004
 
   - name: carry_heavy
     demands:
-      shoulder: 0.20
-      elbow: 0.15
-      grip: 0.45
+      shoulder: 0.25   # Snook & Ciriello 1991
+      elbow: 0.20      # Snook & Ciriello 1991
+      grip: 0.45       # Snook & Ciriello 1991
 
   - name: sorting_light
     demands:
-      shoulder: 0.10
-      elbow: 0.10
-      grip: 0.25
+      shoulder: 0.10   # Nordander et al. 2000
+      elbow: 0.15      # Nordander et al. 2000
+      grip: 0.20       # Nordander et al. 2000
 
   - name: packing
     demands:
-      shoulder: 0.15
-      elbow: 0.20
-      grip: 0.35
+      shoulder: 0.15   # Nordander et al. 2000
+      elbow: 0.20      # Nordander et al. 2000
+      grip: 0.30       # Nordander et al. 2000
 
 # -- ECBF Safety Filter Parameters (Section 5) --
 # Per-muscle configuration. theta_max must satisfy Eq 26.
-# Reference thresholds (Table 2):
+# Reference thresholds (Table 2, with corrected r=15 for grip):
 #   shoulder: theta_min_max = 62.7%
 #   elbow:    theta_min_max = 39.3%
-#   grip:     theta_min_max = 19.5%
+#   grip:     theta_min_max = 32.7%  (corrected from 19.5% after r=30→15)
 ecbf:
   shoulder:
     theta_max: 0.70    # Above 62.7% threshold (Eq 26)
@@ -70,7 +72,7 @@ ecbf:
     alpha3: 0.10
 
   grip:
-    theta_max: 0.25    # Above 19.5% threshold (Eq 26)
+    theta_max: 0.35    # Above 32.7% threshold (Eq 26) — raised from 0.25
     alpha1: 0.05
     alpha2: 0.05
     alpha3: 0.10

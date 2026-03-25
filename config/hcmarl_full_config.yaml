@@ -14,22 +14,27 @@ environment:
     knee:     {F: 0.0150, R: 0.00175, r: 15}
     elbow:    {F: 0.00912, R: 0.00094, r: 15}
     trunk:    {F: 0.00657, R: 0.00354, r: 15}
-    grip:     {F: 0.00794, R: 0.00109, r: 30}
+    grip:     {F: 0.00794, R: 0.00109, r: 15}  # Looft et al. (2018), corrected from r=30
 
   theta_max:
-    shoulder: 0.70
-    ankle: 0.80
-    knee: 0.60
-    elbow: 0.45
-    trunk: 0.65
-    grip: 0.25
+    shoulder: 0.70   # > theta_min_max 62.7% (Eq 26)
+    ankle: 0.80      # > theta_min_max 2.1%
+    knee: 0.60       # > theta_min_max 36.4%
+    elbow: 0.45      # > theta_min_max 39.3%
+    trunk: 0.65      # > theta_min_max 11.0%
+    grip: 0.35       # > theta_min_max 32.7% (raised from 0.25 after r correction)
 
+  # Task demand profiles: fraction of MVC per muscle group
+  # Sources: Granata & Marras 1995 (trunk lifting), de Looze et al. 2000 (shoulder pushing),
+  #   Hoozemans et al. 2004 (shoulder/grip cart pushing), Snook & Ciriello 1991 (carry/lift),
+  #   Nordander et al. 2000 (light repetitive work), Anton et al. 2001 (overhead reach),
+  #   McGill et al. 2013 (trunk stabilisation)
   tasks:
-    heavy_lift:     {shoulder: 0.50, ankle: 0.10, knee: 0.40, elbow: 0.30, trunk: 0.35, grip: 0.60}
-    light_sort:     {shoulder: 0.10, ankle: 0.05, knee: 0.05, elbow: 0.15, trunk: 0.10, grip: 0.20}
-    carry:          {shoulder: 0.30, ankle: 0.20, knee: 0.25, elbow: 0.20, trunk: 0.25, grip: 0.40}
-    overhead_reach: {shoulder: 0.60, ankle: 0.05, knee: 0.10, elbow: 0.35, trunk: 0.20, grip: 0.30}
-    push_cart:      {shoulder: 0.20, ankle: 0.15, knee: 0.20, elbow: 0.15, trunk: 0.30, grip: 0.25}
+    heavy_lift:     {shoulder: 0.45, ankle: 0.10, knee: 0.40, elbow: 0.30, trunk: 0.50, grip: 0.55}  # Granata 1995, Hoozemans 2004
+    light_sort:     {shoulder: 0.10, ankle: 0.05, knee: 0.05, elbow: 0.15, trunk: 0.10, grip: 0.20}  # Nordander et al. 2000
+    carry:          {shoulder: 0.25, ankle: 0.20, knee: 0.25, elbow: 0.20, trunk: 0.30, grip: 0.45}  # Snook & Ciriello 1991
+    overhead_reach: {shoulder: 0.55, ankle: 0.05, knee: 0.10, elbow: 0.35, trunk: 0.15, grip: 0.30}  # Anton et al. 2001
+    push_cart:      {shoulder: 0.20, ankle: 0.15, knee: 0.20, elbow: 0.15, trunk: 0.25, grip: 0.40}  # Hoozemans 2004, de Looze 2000
     rest:           {shoulder: 0.00, ankle: 0.00, knee: 0.00, elbow: 0.00, trunk: 0.00, grip: 0.00}
 
 training:

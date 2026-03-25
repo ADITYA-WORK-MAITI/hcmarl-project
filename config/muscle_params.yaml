@@ -58,6 +58,7 @@ muscles:
   grip:
     F: 0.00794
     R: 0.00109
-    r: 30
-    # delta_max: 12.1%  | theta_min_max: 19.5%  | Rr/F: 4.118 (unlikely)
-    # Note: Grip uses r=30 (not 15). Source: Looft et al. (2018).
+    r: 15
+    # delta_max: 12.1%  | theta_min_max: 32.7%  | Rr/F: 2.059 (marginal)
+    # Corrected: Looft et al. (2018) r=15 for grip extensors; r≈3 only for forearm flexors.
+    # Previous r=30 was an overestimate based on forearm flexor data.

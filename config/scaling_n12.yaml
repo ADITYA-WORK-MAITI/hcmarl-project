@@ -10,14 +10,14 @@ environment:
     knee:     {F: 0.0150, R: 0.00175, r: 15}
     elbow:    {F: 0.00912, R: 0.00094, r: 15}
     trunk:    {F: 0.00657, R: 0.00354, r: 15}
-    grip:     {F: 0.00794, R: 0.00109, r: 30}
+    grip:     {F: 0.00794, R: 0.00109, r: 15}  # Looft et al. (2018), corrected
   theta_max:
     shoulder: 0.70
     ankle: 0.80
     knee: 0.60
     elbow: 0.45
     trunk: 0.65
-    grip: 0.25
+    grip: 0.35   # raised: theta_min_max=32.7% with r=15
 
 training:
   total_steps: 5000000

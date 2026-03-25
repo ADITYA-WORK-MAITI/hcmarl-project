@@ -60,7 +60,7 @@ class TestMuscleParams:
     def test_grip_raw_values(self):
         assert GRIP.F == 0.00794
         assert GRIP.R == 0.00109
-        assert GRIP.r == 30  # Grip uses r=30, not 15
+        assert GRIP.r == 15  # Corrected: Looft et al. (2018) r=15 for grip
 
     def test_shoulder_delta_max(self):
         """Verify delta_max = R/(F+R) = 3.8% for shoulder (Table 1)."""
@@ -98,10 +98,10 @@ class TestMuscleParams:
         assert abs(ANKLE.theta_min_max - 0.021) < 0.001
 
     def test_grip_theta_min_max(self):
-        """Verify theta_min_max = 19.5% for grip (Table 2, r=30)."""
-        expected = 0.00794 / (0.00794 + 0.00109 * 30)
+        """Verify theta_min_max = 32.7% for grip (corrected, r=15)."""
+        expected = 0.00794 / (0.00794 + 0.00109 * 15)
         assert abs(GRIP.theta_min_max - expected) < 1e-10
-        assert abs(GRIP.theta_min_max - 0.195) < 0.002
+        assert abs(GRIP.theta_min_max - 0.327) < 0.002
 
     def test_shoulder_Rr_over_F(self):
         """Shoulder Rr/F = 0.596 < 1 => overshoot possible (Table 2)."""

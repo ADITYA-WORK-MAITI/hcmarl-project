@@ -74,6 +74,60 @@ class DemonstrationCollector:
 
         return count
 
+    def load_real_demos(
+        self,
+        source: str,
+        path: Optional[str] = None,
+        **kwargs,
+    ) -> int:
+        """
+        Load real demonstration data from published datasets.
+
+        Supported sources:
+            'robomimic' — RoboMimic multi-proficiency human teleop (Mandlekar et al. CoRL 2021)
+            'd4rl_adroit' — D4RL Adroit human CyberGlove demos (Fu et al. 2020)
+            'pamap2' — PAMAP2 IMU + heart rate physical activity (Reiss & Stricker 2012)
+
+        Args:
+            source: Dataset name
+            path: Path to dataset files (required for robomimic, pamap2)
+            **kwargs: Dataset-specific arguments (see hcmarl.data.loaders)
+
+        Returns:
+            Number of demonstrations loaded
+        """
+        from hcmarl.data.loaders import load_dataset
+
+        raw_demos = load_dataset(source, path=path, **kwargs)
+
+        count = 0
+        for demo in raw_demos:
+            # Convert to (state, action) tuple format
+            states = demo["states"]
+            actions = demo["actions"]
+            n_steps = min(len(states), len(actions))
+
+            trajectory = []
+            for t in range(n_steps):
+                state = states[t]
+                # Pad/truncate state to expected dimension if needed
+                expected_dim = self.n_muscles * 3 + 1
+                if len(state) != expected_dim:
+                    padded = np.zeros(expected_dim, dtype=np.float32)
+                    padded[:min(len(state), expected_dim)] = state[:expected_dim]
+                    state = padded
+
+                action = actions[t]
+                if isinstance(action, np.ndarray):
+                    action = int(np.argmax(action)) if len(action) > 1 else int(action[0])
+                trajectory.append((state, int(action)))
+
+            self.demonstrations.append(trajectory)
+            self.worker_ids.append(demo["worker_id"])
+            count += 1
+
+        return count
+
     def generate_synthetic_demos(
         self,
         n_workers: int = 4,
@@ -87,7 +141,19 @@ class DemonstrationCollector:
         Type 0: Cautious (low threshold, frequent rest)
         Type 1: Moderate (medium threshold)
         Type 2: Aggressive (high threshold, rare rest)
+
+        WARNING: Synthetic demos are for unit testing and algorithm validation only.
+        For publication-quality results, use load_real_demos() with a real dataset
+        (RoboMimic, D4RL Adroit, or PAMAP2). See hcmarl.data.loaders for details.
         """
+        import warnings
+        warnings.warn(
+            "Using synthetic demos. For publication, use load_real_demos() "
+            "with a real dataset (robomimic, d4rl_adroit, or pamap2). "
+            "See hcmarl.data.loaders for supported datasets.",
+            UserWarning,
+            stacklevel=2,
+        )
         type_params = {
             0: {"rest_prob": 0.4, "theta_eff": 0.3, "label": "cautious"},
             1: {"rest_prob": 0.2, "theta_eff": 0.5, "label": "moderate"},

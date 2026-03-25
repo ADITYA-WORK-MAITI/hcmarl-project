@@ -48,7 +48,7 @@ def test_single_env_rest_recovers():
     # Work for 50 steps to build significant fatigue
     for _ in range(50):
         env.step(0)
-    mf_after_work = env.state["grip"]["MF"]  # grip has r=30, recovers faster
+    mf_after_work = env.state["grip"]["MF"]  # grip has r=15, recovers with reperfusion
     # Rest for 50 steps
     rest_idx = env.task_names.index("rest")
     for _ in range(50):

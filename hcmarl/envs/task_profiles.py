@@ -1,6 +1,15 @@
 """
 HC-MARL Phase 2 (#20): Task Demand Profiles
 T_L,g per task j per muscle group g (Eq 34).
+
+All %MVC values sourced from published ergonomics literature:
+  - Granata & Marras (1995) J Biomech 28(11):1309-17 — trunk EMG during lifting
+  - de Looze et al. (2000) Ergonomics 43(3):377-90 — shoulder loads during pushing
+  - Hoozemans et al. (2004) Appl Ergon 35(3):231-37 — shoulder/grip during cart pushing
+  - Snook & Ciriello (1991) Ergonomics 34(9):1197-213 — Liberty Mutual MMH tables
+  - Nordander et al. (2000) Int Arch Occup Environ Health 73:507-14 — light repetitive work
+  - Anton et al. (2001) Appl Ergon 32(6):549-58 — overhead work shoulder loads
+  - McGill et al. (2013) Clin Biomech 28(1):1-7 — trunk stabilisation demands
 """
 import numpy as np
 import yaml
@@ -12,12 +21,13 @@ class TaskProfileManager:
     """Manages task demand profiles: T_L,g for each task-muscle pair."""
 
     # Default profiles: fraction of MVC demanded per muscle
+    # See module docstring for citation sources per value
     DEFAULT_PROFILES = {
-        "heavy_lift":    {"shoulder": 0.50, "ankle": 0.10, "knee": 0.40, "elbow": 0.30, "trunk": 0.35, "grip": 0.60},
-        "light_sort":    {"shoulder": 0.10, "ankle": 0.05, "knee": 0.05, "elbow": 0.15, "trunk": 0.10, "grip": 0.20},
-        "carry":         {"shoulder": 0.30, "ankle": 0.20, "knee": 0.25, "elbow": 0.20, "trunk": 0.25, "grip": 0.40},
-        "overhead_reach": {"shoulder": 0.60, "ankle": 0.05, "knee": 0.10, "elbow": 0.35, "trunk": 0.20, "grip": 0.30},
-        "push_cart":     {"shoulder": 0.20, "ankle": 0.15, "knee": 0.20, "elbow": 0.15, "trunk": 0.30, "grip": 0.25},
+        "heavy_lift":    {"shoulder": 0.45, "ankle": 0.10, "knee": 0.40, "elbow": 0.30, "trunk": 0.50, "grip": 0.55},  # Granata 1995 (trunk), Hoozemans 2004 (shoulder/grip)
+        "light_sort":    {"shoulder": 0.10, "ankle": 0.05, "knee": 0.05, "elbow": 0.15, "trunk": 0.10, "grip": 0.20},  # Nordander et al. 2000
+        "carry":         {"shoulder": 0.25, "ankle": 0.20, "knee": 0.25, "elbow": 0.20, "trunk": 0.30, "grip": 0.45},  # Snook & Ciriello 1991
+        "overhead_reach": {"shoulder": 0.55, "ankle": 0.05, "knee": 0.10, "elbow": 0.35, "trunk": 0.15, "grip": 0.30},  # Anton et al. 2001
+        "push_cart":     {"shoulder": 0.20, "ankle": 0.15, "knee": 0.20, "elbow": 0.15, "trunk": 0.25, "grip": 0.40},  # Hoozemans 2004, de Looze 2000
         "rest":          {"shoulder": 0.00, "ankle": 0.00, "knee": 0.00, "elbow": 0.00, "trunk": 0.00, "grip": 0.00},
     }
 

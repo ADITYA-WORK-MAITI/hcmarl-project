@@ -255,7 +255,7 @@ ecbf:
     alpha2: 0.05
     alpha3: 0.1
   grip:
-    theta_max: 0.30
+    theta_max: 0.35
     alpha1: 0.05
     alpha2: 0.05
     alpha3: 0.1

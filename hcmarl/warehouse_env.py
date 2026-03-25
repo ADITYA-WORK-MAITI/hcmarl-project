@@ -45,24 +45,26 @@ class SingleWorkerWarehouseEnv(gym.Env):
         self.muscle_groups = muscle_groups or {
             "shoulder": {"F": 0.0146, "R": 0.00058, "r": 15},
             "elbow":    {"F": 0.00912, "R": 0.00094, "r": 15},
-            "grip":     {"F": 0.00794, "R": 0.00109, "r": 30},
+            "grip":     {"F": 0.00794, "R": 0.00109, "r": 15},  # Looft et al. (2018)
         }
         self.muscle_names = list(self.muscle_groups.keys())
         self.n_muscles = len(self.muscle_names)
 
         # Default tasks with per-muscle target loads
+        # Sources: Granata & Marras 1995 (trunk), Hoozemans et al. 2004 (shoulder/grip),
+        #          de Looze et al. 2000 (shoulder pushing), Snook & Ciriello 1991 (carry)
         self.tasks = tasks or {
-            "heavy_lift":   {"shoulder": 0.50, "elbow": 0.30, "grip": 0.60},
-            "light_sort":   {"shoulder": 0.10, "elbow": 0.15, "grip": 0.20},
-            "carry":        {"shoulder": 0.30, "elbow": 0.20, "grip": 0.40},
+            "heavy_lift":   {"shoulder": 0.45, "elbow": 0.30, "grip": 0.55},  # Hoozemans 2004, Granata 1995
+            "light_sort":   {"shoulder": 0.10, "elbow": 0.15, "grip": 0.20},  # Nordander et al. 2000
+            "carry":        {"shoulder": 0.25, "elbow": 0.20, "grip": 0.45},  # Snook & Ciriello 1991
             "rest":         {"shoulder": 0.00, "elbow": 0.00, "grip": 0.00},
         }
         self.task_names = list(self.tasks.keys())
         self.n_tasks = len(self.task_names)
 
-        # Safety thresholds per muscle
+        # Safety thresholds per muscle (must satisfy Eq 26: theta_max >= F/(F+R*r))
         self.theta_max = theta_max or {
-            "shoulder": 0.70, "elbow": 0.45, "grip": 0.25,
+            "shoulder": 0.70, "elbow": 0.45, "grip": 0.35,  # grip raised: theta_min_max=32.7% with r=15
         }
 
         # Observation: [MR, MA, MF] per muscle + current_step_normalised
@@ -232,22 +234,22 @@ class WarehouseMultiAgentEnv:
         self.muscle_groups = muscle_groups or {
             "shoulder": {"F": 0.0146, "R": 0.00058, "r": 15},
             "elbow":    {"F": 0.00912, "R": 0.00094, "r": 15},
-            "grip":     {"F": 0.00794, "R": 0.00109, "r": 30},
+            "grip":     {"F": 0.00794, "R": 0.00109, "r": 15},  # Looft et al. (2018)
         }
         self.muscle_names = list(self.muscle_groups.keys())
         self.n_muscles = len(self.muscle_names)
 
         self.tasks = tasks or {
-            "heavy_lift":   {"shoulder": 0.50, "elbow": 0.30, "grip": 0.60},
-            "light_sort":   {"shoulder": 0.10, "elbow": 0.15, "grip": 0.20},
-            "carry":        {"shoulder": 0.30, "elbow": 0.20, "grip": 0.40},
+            "heavy_lift":   {"shoulder": 0.45, "elbow": 0.30, "grip": 0.55},  # Hoozemans 2004, Granata 1995
+            "light_sort":   {"shoulder": 0.10, "elbow": 0.15, "grip": 0.20},  # Nordander et al. 2000
+            "carry":        {"shoulder": 0.25, "elbow": 0.20, "grip": 0.45},  # Snook & Ciriello 1991
             "rest":         {"shoulder": 0.00, "elbow": 0.00, "grip": 0.00},
         }
         self.task_names = list(self.tasks.keys())
         self.n_tasks = len(self.task_names)
 
         self.theta_max = theta_max or {
-            "shoulder": 0.70, "elbow": 0.45, "grip": 0.25,
+            "shoulder": 0.70, "elbow": 0.45, "grip": 0.35,  # grip raised: theta_min_max=32.7% with r=15
         }
 
         # Agent IDs

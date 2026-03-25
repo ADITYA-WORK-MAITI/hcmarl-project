@@ -216,7 +216,7 @@ def run_ablation_studies(
       2. No ECBF (remove safety filter)
       3. No NSWF (random allocation instead of Nash)
       4. No Divergent Di (use Di = κ·MF² instead of κ·MF²/(1-MF))
-      5. No Reperfusion (r = 1 instead of r = 15/30)
+      5. No Reperfusion (r = 1 instead of r = 15)
     """
     results = {}
 
@@ -258,7 +258,7 @@ def run_ablation_studies(
             muscle_groups = {
                 "shoulder": {"F": 0.0146, "R": 0.00058, "r": 15 if config["reperfusion"] else 1},
                 "elbow":    {"F": 0.00912, "R": 0.00094, "r": 15 if config["reperfusion"] else 1},
-                "grip":     {"F": 0.00794, "R": 0.00109, "r": 30 if config["reperfusion"] else 1},
+                "grip":     {"F": 0.00794, "R": 0.00109, "r": 15 if config["reperfusion"] else 1},  # Looft et al. (2018)
             }
 
             env = WarehouseMultiAgentEnv(

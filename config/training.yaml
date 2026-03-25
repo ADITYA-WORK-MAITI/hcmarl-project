@@ -12,17 +12,17 @@ environment:
   muscle_groups:
     shoulder: {F: 0.0146, R: 0.00058, r: 15}
     elbow:    {F: 0.00912, R: 0.00094, r: 15}
-    grip:     {F: 0.00794, R: 0.00109, r: 30}
+    grip:     {F: 0.00794, R: 0.00109, r: 15}  # Looft et al. (2018), corrected
 
   theta_max:
     shoulder: 0.70
     elbow: 0.45
-    grip: 0.25
+    grip: 0.35   # raised from 0.25: theta_min_max=32.7% with r=15
 
-  tasks:
-    heavy_lift:  {shoulder: 0.50, elbow: 0.30, grip: 0.60}
+  tasks:  # Sources: Hoozemans 2004, Granata 1995, Snook & Ciriello 1991, Nordander 2000
+    heavy_lift:  {shoulder: 0.45, elbow: 0.30, grip: 0.55}
     light_sort:  {shoulder: 0.10, elbow: 0.15, grip: 0.20}
-    carry:       {shoulder: 0.30, elbow: 0.20, grip: 0.40}
+    carry:       {shoulder: 0.25, elbow: 0.20, grip: 0.45}
     rest:        {shoulder: 0.00, elbow: 0.00, grip: 0.00}
 
 # --- MAPPO ---

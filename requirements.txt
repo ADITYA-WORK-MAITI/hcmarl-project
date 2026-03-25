@@ -24,3 +24,13 @@ wandb>=0.16.0
 # torch>=2.0.0
 # gymnasium>=0.29.0
 # pettingzoo>=1.24.0
+
+# Real benchmark environments (Phase 4B: legitimacy upgrade)
+# rware>=1.0.0                    # RWARE multi-agent warehouse benchmark
+# safety-gymnasium>=1.0.0         # Real Safety-Gymnasium (PKU-Alignment)
+# omnisafe>=0.6.0                 # OmniSafe safe RL algorithms library
+
+# Real dataset loaders (Phase 4B: legitimacy upgrade)
+# h5py>=3.8.0                     # For RoboMimic HDF5 files
+# d4rl>=1.1                       # For D4RL Adroit human demos
+# minari>=0.4.0                   # Modern D4RL replacement (Farama)

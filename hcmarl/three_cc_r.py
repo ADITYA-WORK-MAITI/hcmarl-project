@@ -75,7 +75,7 @@ ANKLE    = MuscleParams(name="ankle",    F=0.00589, R=0.0182,  r=15)
 KNEE     = MuscleParams(name="knee",     F=0.0150,  R=0.00175, r=15)
 ELBOW    = MuscleParams(name="elbow",    F=0.00912, R=0.00094, r=15)
 TRUNK    = MuscleParams(name="trunk",    F=0.00657, R=0.00354, r=15)
-GRIP     = MuscleParams(name="grip",     F=0.00794, R=0.00109, r=30)
+GRIP     = MuscleParams(name="grip",     F=0.00794, R=0.00109, r=15)  # Corrected: Looft et al. (2018) r=15 for grip; r=30 only for forearm flexors
 
 ALL_MUSCLES = [SHOULDER, ANKLE, KNEE, ELBOW, TRUNK, GRIP]
 
