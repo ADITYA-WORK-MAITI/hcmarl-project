@@ -242,46 +242,6 @@ class NSWFAllocator:
         or to rest (task 0). No two workers share a productive task.
         """
         best_obj = -float("inf")
-        best_assignment: dict[int, int] = {}
-
-        def _recurse(
-            worker: int,
-            assigned_tasks: set[int],
-            current_surpluses: list[float],
-        ) -> None:
-            nonlocal best_obj, best_assignment
-
-            if worker == N:
-                # All workers assigned: compute objective (Eq 33)
-                obj = sum(safe_log(s) for s in current_surpluses)
-                if obj > best_obj:
-                    best_obj = obj
-                    best_assignment = {}
-                    for i in range(N):
-                        # Reconstruct assignment from surpluses
-                        pass
-                return
-
-            # Option 1: Assign to rest (task 0)
-            current_surpluses.append(eps)
-            prev_len = len(current_surpluses)
-            _recurse(worker + 1, assigned_tasks, current_surpluses)
-            current_surpluses.pop()
-
-            # Option 2: Assign to each available productive task
-            for j in range(M):
-                if j not in assigned_tasks:
-                    s = surplus_matrix[worker, j]
-                    if s > 0:  # Only feasible if surplus is positive
-                        current_surpluses.append(s)
-                        assigned_tasks.add(j)
-                        _recurse(worker + 1, assigned_tasks, current_surpluses)
-                        assigned_tasks.remove(j)
-                        current_surpluses.pop()
-
-        # Simpler exact implementation: enumerate all valid assignments
-        # using iterative approach
-        best_obj = -float("inf")
         best_assign = {i: 0 for i in range(N)}  # Default: all rest
 
         def _search(

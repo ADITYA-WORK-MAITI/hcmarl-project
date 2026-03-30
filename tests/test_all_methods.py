@@ -33,14 +33,16 @@ def test_omnisafe_wrapper():
     from hcmarl.baselines.omnisafe_wrapper import OmniSafeWrapper
     w = OmniSafeWrapper("PPOLag", obs_dim=19, n_actions=6)
     obs = {"worker_0": np.zeros(19, dtype=np.float32)}
-    actions = w.get_actions(obs)
+    result = w.get_actions(obs)
+    actions = result[0] if isinstance(result, tuple) else result
     assert "worker_0" in actions; print("  PASS: test_omnisafe_wrapper")
 
 def test_safepo_wrapper():
     from hcmarl.baselines.safepo_wrapper import SafePOWrapper
     w = SafePOWrapper(obs_dim=19, n_actions=6, n_agents=4)
     obs = {"worker_0": np.zeros(19, dtype=np.float32)}
-    actions = w.get_actions(obs)
+    result = w.get_actions(obs)
+    actions = result[0] if isinstance(result, tuple) else result
     assert "worker_0" in actions; print("  PASS: test_safepo_wrapper")
 
 if __name__ == "__main__":

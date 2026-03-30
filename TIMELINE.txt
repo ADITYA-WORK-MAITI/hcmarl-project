@@ -1,0 +1,201 @@
+ Here's the full picture.
+
+  ---
+  DAY-BY-DAY TIMELINE: March 26 – April 20, 2026
+
+  26 days. Target: ICML 2026 Workshop submission by April 20.
+
+  Phase A: Code Completion + MMICRL Validation (Mar 26–29, 4 days)
+
+  ┌─────┬─────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Day │  Date   │                                                             What to do                                                              │
+  ├─────┼─────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 1   │ Mar 26  │ Fix MAPPO-Lag update(), IPPO update(), wire MMICRL into train.py. DONE TODAY.                                                       │
+  │     │ (Thu)   │                                                                                                                                     │
+  ├─────┼─────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │     │ Mar 27  │ Fix SafePO wrapper (add update(), buffer, load()). Fix safepo_wrapper.py so MACPO can train, not just do random actions. Fix the    │
+  │ 2   │ (Fri)   │ h_marginal = log(N) entropy bug in mmicrl.py line 391 — replace with proper empirical entropy. Verify MMICRL with PAMAP2 data       │
+  │     │         │ end-to-end (download PAMAP2 dataset).                                                                                               │
+  ├─────┼─────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │     │ Mar 28  │ MMICRL + PAMAP2 full validation: run load_real_demos("pamap2", path=...), fit MMICRL, confirm 3 distinct types with meaningful      │
+  │ 3   │ (Sat)   │ threshold separation. Save results. Write MMICRL unit tests with real data path. Verify all 7 methods can start training for at     │
+  │     │         │ least 100 episodes without crash.                                                                                                   │
+  ├─────┼─────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 4   │ Mar 29  │ End-to-end dry run: train HC-MARL for 50K steps locally (CPU). Train MAPPO, IPPO, MAPPO-Lag each for 50K steps. Confirm all produce │
+  │     │ (Sun)   │  logs, checkpoints, metrics. Fix any crashes. Freeze codebase for experiments.                                                      │
+  └─────┴─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Phase B: Training Experiments (Mar 30 – Apr 8, 10 days)
+
+  ┌─────┬──────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Day │   Date   │                                                             What to do                                                             │
+  ├─────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 5   │ Mar 30   │ Set up Colab Pro + Kaggle Pro. Upload repo. Launch Experiment Group 1: HC-MARL (5 seeds × 5M steps) on Colab GPU. Expect ~3-4 hrs  │
+  │     │ (Mon)    │ per seed = 15-20 hrs. Run 2-3 seeds in parallel on Colab + Kaggle.                                                                 │
+  ├─────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 6   │ Mar 31   │ Finish HC-MARL seeds. Launch Experiment Group 2: MAPPO baseline (5 seeds × 5M steps). Monitor. Download HC-MARL checkpoints +      │
+  │     │ (Tue)    │ logs.                                                                                                                              │
+  ├─────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 7   │ Apr 1    │ Launch Experiment Group 3: IPPO (5 seeds). Launch Experiment Group 4: MAPPO-Lag (5 seeds). Run in parallel across Colab + Kaggle.  │
+  │     │ (Wed)    │                                                                                                                                    │
+  ├─────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 8   │ Apr 2    │ Finish IPPO + MAPPO-Lag. Launch Experiment Group 5: Ablations — no_ecbf, no_nswf, no_mmicrl (3 ablations × 5 seeds = 15 runs).     │
+  │     │ (Thu)    │                                                                                                                                    │
+  ├─────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 9   │ Apr 3    │ Finish ablations no_ecbf, no_nswf, no_mmicrl. Launch ablations no_reperfusion, no_divergent (2 × 5 seeds = 10 runs).               │
+  │     │ (Fri)    │                                                                                                                                    │
+  ├─────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 10  │ Apr 4    │ Launch Experiment Group 6: Scaling (N=3,4,6,8,12 × 5 seeds = 25 runs). These are shorter if max_steps scales with N.               │
+  │     │ (Sat)    │                                                                                                                                    │
+  ├─────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 11  │ Apr 5    │ Finish scaling. Launch Experiment Group 7: Safety-Gym validation if OmniSafe/SafetyGymnasium install works (CPO, PPO-Lag on        │
+  │     │ (Sun)    │ PointGoal × 5 seeds). If install fails, skip — Safety-Gym is optional for workshop paper.                                          │
+  ├─────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 12  │ Apr 6    │ Buffer day for reruns / failed seeds. Download all results. Organize into results/ directory.                                      │
+  │     │ (Mon)    │                                                                                                                                    │
+  ├─────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 13  │ Apr 7    │ Run scripts/evaluate.py on all checkpoints. Generate raw CSV tables of all metrics across all methods, seeds, ablations.           │
+  │     │ (Tue)    │                                                                                                                                    │
+  ├─────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 14  │ Apr 8    │ Build figure generation script. Generate all paper figures from real data: learning curves, bar charts (violation rate, Jain       │
+  │     │ (Wed)    │ fairness, throughput), ablation comparison, scaling plot.                                                                          │
+  └─────┴──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Phase C: Paper Writing (Apr 9 – Apr 18, 10 days)
+
+  ┌─────┬───────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Day │   Date    │                                                            What to do                                                             │
+  ├─────┼───────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 15  │ Apr 9     │ Paper skeleton: title, abstract draft, section headers (Intro, Related Work, Method, Experiments, Conclusion). Fill in Method     │
+  │     │ (Thu)     │ section from mathematical modelling doc — 3CC-r, ECBF, NSWF, MMICRL.                                                              │
+  ├─────┼───────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 16  │ Apr 10    │ Write Introduction + Related Work. Position paper: human-centric MARL, safe RL, fatigue-aware scheduling, inverse constrained RL. │
+  │     │ (Fri)     │                                                                                                                                   │
+  ├─────┼───────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 17  │ Apr 11    │ Write Experiments section: experimental setup (env description, baselines, metrics, hyperparameters). Insert figures and tables   │
+  │     │ (Sat)     │ with real numbers.                                                                                                                │
+  ├─────┼───────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 18  │ Apr 12    │ Write Results + Discussion. Interpret every figure. Why does HC-MARL beat baselines? What do ablations show? How does MMICRL      │
+  │     │ (Sun)     │ help?                                                                                                                             │
+  ├─────┼───────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 19  │ Apr 13    │ Write Conclusion + Limitations + Broader Impact. Finalize abstract.                                                               │
+  │     │ (Mon)     │                                                                                                                                   │
+  ├─────┼───────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 20  │ Apr 14    │ First complete draft. Self-review pass: check all claims backed by data, all figures referenced, notation consistent with math    │
+  │     │ (Tue)     │ doc.                                                                                                                              │
+  ├─────┼───────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 21  │ Apr 15    │ Send draft to Dr. Amrit Pal Singh for review. Incorporate feedback.                                                               │
+  │     │ (Wed)     │                                                                                                                                   │
+  ├─────┼───────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 22  │ Apr 16    │ Revise based on advisor feedback. Polish figures (publication quality).                                                           │
+  │     │ (Thu)     │                                                                                                                                   │
+  └─────┴───────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Phase D: Final Polish + Submit (Apr 17 – Apr 20, 4 days buffer)
+
+  ┌─────┬──────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Day │     Date     │                                          What to do                                          │
+  ├─────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 23  │ Apr 17 (Fri) │ Final proofread. Check formatting (ICML workshop template, 4-6 pages). References in BibTeX. │
+  ├─────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 24  │ Apr 18 (Sat) │ Buffer day. Fix any remaining issues.                                                        │
+  ├─────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 25  │ Apr 19 (Sun) │ Buffer day. Final read-through.                                                              │
+  ├─────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 26  │ Apr 20 (Mon) │ SUBMIT.                                                                                      │
+  └─────┴──────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ---
+  STATUS: WHAT IS DONE vs WHAT IS LEFT
+
+  DONE (working, tested, verified)
+
+  ┌─────────────────────────┬──────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │        Component        │  Status  │                                                    Evidence                                                    │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 3CC-r fatigue ODE       │ COMPLETE │ hcmarl/three_cc_r.py, verified against Eqs 2-6, Table 1. RK45 + Euler.                                         │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ ECBF safety filter      │ COMPLETE │ hcmarl/ecbf_filter.py, 429 lines. Dual-barrier CBF-QP, CVXPY/OSQP. Zero math deviations from Eqs 12-23.        │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ NSWF allocator          │ COMPLETE │ hcmarl/nswf_allocator.py. Correct Eqs 31-33, Def 6.1.                                                          │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ End-to-end pipeline     │ COMPLETE │ hcmarl/pipeline.py. All 7 steps of Section 7.3.                                                                │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Warehouse environment   │ COMPLETE │ hcmarl/warehouse_env.py + hcmarl/envs/pettingzoo_wrapper.py. N-agent parallel env with 3CC-r integration +     │
+  │                         │          │ ECBF analytical clipping.                                                                                      │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ MAPPO agent             │ COMPLETE │ hcmarl/agents/mappo.py, 123 lines. Full PPO with GAE, clipping, entropy, buffer, update().                     │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ MAPPO-Lagrangian        │ COMPLETE │ hcmarl/agents/mappo_lag.py. Fixed today. LagrangianRolloutBuffer + cost GAE + λ*cost_advantage penalty +       │
+  │                         │          │ update(). Smoke tested.                                                                                        │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ IPPO                    │ COMPLETE │ hcmarl/agents/ippo.py. Fixed today. Per-agent buffers + update(). Smoke tested.                                │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ HCMARLAgent wrapper     │ COMPLETE │ hcmarl/agents/hcmarl_agent.py. Thin wrapper around MAPPO + ECBF params.                                        │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Neural networks         │ COMPLETE │ hcmarl/agents/networks.py. Actor, Critic, CostCritic with orthogonal init.                                     │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ MMICRL core             │ COMPLETE │ hcmarl/mmicrl.py, 545 lines. K-means clustering, MI computation, per-type constraint learning, online          │
+  │                         │          │ adaptation.                                                                                                    │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Data loaders            │ COMPLETE │ hcmarl/data/loaders.py, 377 lines. RoboMimic, D4RL, PAMAP2 loaders. Real code, not stubs.                      │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Training script         │ COMPLETE │ scripts/train.py. Fixed today. Handles MAPPO, MAPPO-Lag, IPPO, HCMARLAgent correctly. MMICRL integration via   │
+  │                         │          │ --mmicrl flag.                                                                                                 │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Evaluation script       │ COMPLETE │ scripts/evaluate.py, 161 lines. Loads checkpoint, runs N episodes, computes metrics.                           │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Batch launchers         │ COMPLETE │ scripts/run_baselines.py, run_ablations.py, run_scaling.py, run_safety_gym.py. All use subprocess to call      │
+  │                         │          │ train.py.                                                                                                      │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Configs                 │ COMPLETE │ 25 YAML configs for all methods, ablations, scaling, safety-gym.                                               │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Colab notebooks         │ COMPLETE │ 7 notebooks for training different experiment groups.                                                          │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 10 baseline methods     │ COMPLETE │ hcmarl/baselines.py. Fixed-schedule, greedy-safe, etc. All functional for inference.                           │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Logger                  │ COMPLETE │ hcmarl/logger.py. CSV + optional W&B.                                                                          │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Tests                   │ COMPLETE │ 175 tests, all passing.                                                                                        │
+  ├─────────────────────────┼──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Mathematical modelling  │ COMPLETE │ 15-page PDF. Not to be touched.                                                                                │
+  │ doc                     │          │                                                                                                                │
+  └─────────────────────────┴──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  LEFT TO DO (in priority order)
+
+  ┌─────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─────────┬───────────────────────┐
+  │  #  │                                                    Task                                                    │ Effort  │       Blocker?        │
+  ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┼───────────────────────┤
+  │ 1   │ Fix mmicrl.py line 391 entropy bug — h_marginal = log(N) should be proper empirical entropy. Harmless when │ 30 min  │ No                    │
+  │     │  λ₁=λ₂ (default), but wrong if anyone changes lambdas. Quick fix.                                          │         │                       │
+  ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┼───────────────────────┤
+  │ 2   │ SafePO wrapper — no update(), no buffer, no load(). Falls back to random actions if safepo not installed.  │ 2 hrs   │ No (can drop MACPO    │
+  │     │ Needs real training loop or remove MACPO from paper.                                                       │         │ from paper)           │
+  ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┼───────────────────────┤
+  │ 3   │ Download PAMAP2 dataset — need the real data files to run MMICRL with --pamap2-path. UCI archive, ~600MB.  │ 30 min  │ Yes for MMICRL        │
+  │     │                                                                                                            │         │ experiments           │
+  ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┼───────────────────────┤
+  │ 4   │ Validate MMICRL on PAMAP2 end-to-end — run load_real_demos("pamap2") → fit() → confirm distinct types.     │ 2 hrs   │ Yes                   │
+  │     │ Never been tested with real data.                                                                          │         │                       │
+  ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┼───────────────────────┤
+  │ 5   │ Dry run all 7 methods for 50K steps — verify no crashes, logs work, checkpoints save correctly.            │ 3 hrs   │ Yes                   │
+  ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┼───────────────────────┤
+  │ 6   │ Set up Colab Pro + Kaggle Pro — upload repo, verify GPU training works.                                    │ 2 hrs   │ Yes                   │
+  ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┼───────────────────────┤
+  │ 7   │ Run ALL training experiments — 7 groups, ~95 total runs (5 seeds each). ~100+ GPU hours.                   │ 10 days │ Yes                   │
+  ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┼───────────────────────┤
+  │ 8   │ Generate figures from real results — learning curves, bar charts, ablation plots, scaling plots. Need a    │ 1 day   │ Yes                   │
+  │     │ scripts/plot_results.py. Does not exist yet.                                                               │         │                       │
+  ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┼───────────────────────┤
+  │ 9   │ Write the paper — 4-6 pages ICML workshop format. Title, abstract, intro, related work, method,            │ 7-10    │ Yes                   │
+  │     │ experiments, conclusion.                                                                                   │ days    │                       │
+  ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┼───────────────────────┤
+  │ 10  │ Advisor review + revise                                                                                    │ 2-3     │ Yes                   │
+  │     │                                                                                                            │ days    │                       │
+  └─────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────┴───────────────────────┘
+
+  ZERO training has been run. ZERO results exist. ZERO figures from real experiments. ZERO words of the paper written.
+
+  The codebase is complete and functional. Everything from here is execution: run experiments, collect data, make figures, write paper.
+

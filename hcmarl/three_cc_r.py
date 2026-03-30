@@ -68,14 +68,20 @@ class MuscleParams:
         return self.Rr / self.F
 
 
-# -- Calibrated parameter sets from Table 1 --
+# -- Calibrated parameter sets from Table 1 (isometric regime) --
+# These are ISOMETRIC fatigue/recovery rates from Frey-Law, Looft &
+# Heitsman (2012), calibrated against sustained isometric endurance data
+# (Frey-Law & Avin 2010 meta-analysis of 194 publications; Rohmert 1960).
+# For dynamic tasks (e.g. WSD4FEDSRM rotations), the effective F is
+# 30-180x larger because dynamic contractions impose higher metabolic
+# demand per unit time. See real_data_calibration.py for dynamic regime.
 
 SHOULDER = MuscleParams(name="shoulder", F=0.0146,  R=0.00058, r=15)
 ANKLE    = MuscleParams(name="ankle",    F=0.00589, R=0.0182,  r=15)
 KNEE     = MuscleParams(name="knee",     F=0.0150,  R=0.00175, r=15)
 ELBOW    = MuscleParams(name="elbow",    F=0.00912, R=0.00094, r=15)
 TRUNK    = MuscleParams(name="trunk",    F=0.00657, R=0.00354, r=15)
-GRIP     = MuscleParams(name="grip",     F=0.00794, R=0.00109, r=15)  # Corrected: Looft et al. (2018) r=15 for grip; r=30 only for forearm flexors
+GRIP     = MuscleParams(name="grip",     F=0.00794, R=0.00109, r=30)  # Looft et al. (2018) Table 2: r=30 for hand grip (forearm flexors)
 
 ALL_MUSCLES = [SHOULDER, ANKLE, KNEE, ELBOW, TRUNK, GRIP]
 

@@ -60,7 +60,7 @@ class TestMuscleParams:
     def test_grip_raw_values(self):
         assert GRIP.F == 0.00794
         assert GRIP.R == 0.00109
-        assert GRIP.r == 15  # Corrected: Looft et al. (2018) r=15 for grip
+        assert GRIP.r == 30  # Looft et al. (2018) Table 2: r=30 for hand grip
 
     def test_shoulder_delta_max(self):
         """Verify delta_max = R/(F+R) = 3.8% for shoulder (Table 1)."""
@@ -98,10 +98,10 @@ class TestMuscleParams:
         assert abs(ANKLE.theta_min_max - 0.021) < 0.001
 
     def test_grip_theta_min_max(self):
-        """Verify theta_min_max = 32.7% for grip (corrected, r=15)."""
-        expected = 0.00794 / (0.00794 + 0.00109 * 15)
+        """Verify theta_min_max = 19.5% for grip (r=30, Looft et al. 2018)."""
+        expected = 0.00794 / (0.00794 + 0.00109 * 30)
         assert abs(GRIP.theta_min_max - expected) < 1e-10
-        assert abs(GRIP.theta_min_max - 0.327) < 0.002
+        assert abs(GRIP.theta_min_max - 0.195) < 0.002
 
     def test_shoulder_Rr_over_F(self):
         """Shoulder Rr/F = 0.596 < 1 => overshoot possible (Table 2)."""
@@ -364,3 +364,99 @@ class TestSimulation:
             duration=30.0,
         )
         assert result["MF"][-1] < result["MF"][0]
+
+
+# =====================================================================
+# 5. Dynamic vs isometric F regime validation (L4)
+# =====================================================================
+
+class TestDynamicIsometricScaling:
+    """Validate that isometric and dynamic F regimes are distinct and consistent.
+
+    Table 1 isometric F = 0.0146 min^{-1} for shoulder predicts endurance
+    times of 40-100+ minutes for sustained holds at 15-55% MVC. Dynamic
+    rotations (WSD4FEDSRM) have endurance 50-250 seconds, requiring
+    F ~ 0.3-3.0 min^{-1}. The 30-180x ratio is expected because the 3CC-r
+    model's F captures total metabolic demand per unit time, which is far
+    higher for dynamic tasks (concentric/eccentric cycling, movement-
+    dependent recruitment).
+    """
+
+    def test_isometric_F_predicts_long_endurance(self):
+        """Isometric F=0.0146 at 35% MVC must predict ET > 600s."""
+        from hcmarl.real_data_calibration import predict_endurance_time
+        et = predict_endurance_time(
+            F=SHOULDER.F, R=0.02, r=15.0,
+            target_load=0.35, max_time=7200.0,
+        )
+        assert et > 600.0, f"Isometric ET={et:.0f}s, expected >600s"
+
+    def test_dynamic_F_predicts_short_endurance(self):
+        """Dynamic F=1.0 at 35% MVC must predict ET < 300s."""
+        from hcmarl.real_data_calibration import predict_endurance_time
+        et = predict_endurance_time(
+            F=1.0, R=0.02, r=15.0,
+            target_load=0.35, max_time=600.0,
+        )
+        assert et < 300.0, f"Dynamic ET={et:.0f}s, expected <300s"
+
+    def test_scaling_ratio_range(self):
+        """F_dynamic / F_isometric should be 30-180x for typical dynamic F."""
+        F_dynamic_low = 0.44   # Slowest WSD4FEDSRM subject
+        F_dynamic_high = 2.62  # Fastest WSD4FEDSRM subject
+        ratio_low = F_dynamic_low / SHOULDER.F
+        ratio_high = F_dynamic_high / SHOULDER.F
+        assert ratio_low > 25.0, f"Low ratio={ratio_low:.1f}x, expected >25x"
+        assert ratio_high < 200.0, f"High ratio={ratio_high:.1f}x, expected <200x"
+
+
+# =====================================================================
+# 6. Correlated inter-muscle sampling (L5)
+# =====================================================================
+
+class TestCorrelatedSampling:
+    """Validate that correlated sampling preserves population marginals
+    and produces positive inter-muscle F correlation."""
+
+    def test_correlated_sampling_preserves_population_mean(self):
+        """Mean F from correlated sampling within 50% of population mean."""
+        from hcmarl.real_data_calibration import (
+            sample_correlated_FR, POPULATION_FR,
+        )
+        # 100 fake subjects with varied shoulder F (log-uniform 0.5-3.0)
+        rng = np.random.RandomState(42)
+        shoulder_F_vals = list(np.exp(rng.uniform(np.log(0.5), np.log(3.0), 100)))
+
+        for muscle in ['ankle', 'knee', 'elbow', 'trunk', 'grip']:
+            pairs = sample_correlated_FR(
+                muscle, shoulder_F_vals, rho=0.5,
+                rng=np.random.RandomState(42),
+            )
+            sampled_F = [p[0] for p in pairs]
+            pop_F = POPULATION_FR[muscle][0]
+            mean_F = np.mean(sampled_F)
+            ratio = mean_F / pop_F
+            assert 0.3 < ratio < 3.0, (
+                f"{muscle}: mean F={mean_F:.5f}, pop={pop_F:.5f}, "
+                f"ratio={ratio:.2f} outside [0.3, 3.0]"
+            )
+            assert all(f > 0 for f in sampled_F), f"{muscle}: negative F"
+
+    def test_correlated_sampling_positive_correlation(self):
+        """Subjects with higher shoulder F should tend to have higher other F."""
+        from hcmarl.real_data_calibration import sample_correlated_FR
+        rng = np.random.RandomState(123)
+        # Strong signal: half low F, half high F
+        shoulder_F_vals = [0.5] * 50 + [3.0] * 50
+
+        for muscle in ['ankle', 'elbow', 'grip']:
+            pairs = sample_correlated_FR(
+                muscle, shoulder_F_vals, rho=0.5,
+                rng=np.random.RandomState(123),
+            )
+            low_group = np.mean([p[0] for p in pairs[:50]])
+            high_group = np.mean([p[0] for p in pairs[50:]])
+            assert high_group > low_group, (
+                f"{muscle}: high shoulder group F={high_group:.5f} "
+                f"<= low group F={low_group:.5f}"
+            )

@@ -45,6 +45,25 @@ wandb/
 *.npy
 *.npz
 
+# ---------- Datasets (large, download separately) ----------
+data/
+
+# ---------- Reference PDFs (large, local only) ----------
+REFERENCES/
+
+# ---------- Training run logs (generated, not source) ----------
+logs/hcmarl/
+logs/mappo/
+logs/mappo_lag/
+logs/ippo/
+logs/ppo_lag/
+logs/cpo/
+logs/macpo/
+
+# ---------- Notebook outputs (generated) ----------
+notebooks/*_executed.ipynb
+notebooks/*.png
+
 # ---------- LaTeX ----------
 paper/*.aux
 paper/*.bbl

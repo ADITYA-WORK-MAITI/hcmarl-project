@@ -1,12 +1,15 @@
 """Tests for Phase 3: MMICRL, Online Adaptation, Safety-Gym Validation."""
 
 import numpy as np
+import torch
 import sys
 import os
+from itertools import permutations
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hcmarl.mmicrl import MMICRL, DemonstrationCollector, OnlineAdapter, validate_mmicrl
+from hcmarl.mmicrl import CFDE, _MADE
 from hcmarl.safety_gym_validation import (
     GenericECBFFilter, SimulatedSafetyPointGoal, run_safety_benchmark,
 )
@@ -63,9 +66,13 @@ def test_mmicrl_type_assignment():
     mmicrl = MMICRL(n_types=3, n_muscles=3)
     mmicrl.fit(collector)
 
-    # Test threshold lookup for a worker
-    worker_features = np.array([0.1, 0.3, 0.4, 60, 0.005], dtype=np.float32)
-    thresholds = mmicrl.get_threshold_for_worker(worker_features)
+    # Test threshold lookup using a trajectory of per-step (s,a) features
+    # Simulate 10 steps: state_dim=10, n_actions=4 → feat_dim=14
+    n_steps = 10
+    state_dim = 3 * 3 + 1  # 3 muscles * 3 compartments + timestep
+    n_actions = 4
+    worker_traj = np.random.randn(n_steps, state_dim + n_actions).astype(np.float32)
+    thresholds = mmicrl.get_threshold_for_worker(worker_traj, traj_as_steps=True)
     assert "shoulder" in thresholds
     assert "elbow" in thresholds
     assert "grip" in thresholds
@@ -84,6 +91,119 @@ def test_mmicrl_discovers_types():
     thetas = [results["theta_per_type"][k]["shoulder"] for k in range(3)]
     assert max(thetas) - min(thetas) > 0.01, f"Types too similar: {thetas}"
     print("  PASS: test_mmicrl_discovers_types")
+
+
+# ===========================================================================
+# CFDE Mathematical Property Validation (L12)
+# ===========================================================================
+
+def test_cfde_invertibility():
+    """MADE and full flow must be invertible: forward(x) -> u, inverse(u) -> x' ≈ x."""
+    torch.manual_seed(42)
+    input_dim, n_types = 4, 3
+    # MADE layer
+    made = _MADE(num_inputs=input_dim, num_hidden=32, num_cond_inputs=n_types, act='relu')
+    made.eval()
+    x = torch.randn(5, input_dim)
+    z = torch.zeros(5, n_types); z[:, 0] = 1.0
+    u, _ = made(x, z, mode='direct')
+    x_recon, _ = made(u, z, mode='inverse')
+    err = (x - x_recon).abs().max().item()
+    assert err < 1e-4, f"MADE invertibility error {err:.2e} > 1e-4"
+    # Full flow
+    cfde = CFDE(input_dim=input_dim, n_types=n_types, hidden_dims=[32, 32])
+    cfde.flow.train()
+    _ = cfde.flow(torch.randn(20, input_dim), torch.zeros(20, n_types), mode='direct')
+    cfde.flow.eval()
+    u2, _ = cfde.flow(x, z, mode='direct')
+    x_recon2, _ = cfde.flow(u2, z, mode='inverse')
+    err2 = (x - x_recon2).abs().max().item()
+    assert err2 < 1e-3, f"Full flow invertibility error {err2:.2e} > 1e-3"
+    print("  PASS: test_cfde_invertibility")
+
+def test_cfde_logdet_correctness():
+    """Flow-reported log|det(J)| must match numerically computed Jacobian."""
+    torch.manual_seed(42)
+    input_dim, n_types = 4, 3
+    cfde = CFDE(input_dim=input_dim, n_types=n_types, hidden_dims=[32, 32])
+    cfde.flow.train()
+    _ = cfde.flow(torch.randn(50, input_dim), torch.zeros(50, n_types), mode='direct')
+    cfde.flow.eval()
+    x = torch.randn(1, input_dim)
+    z = torch.zeros(1, n_types); z[:, 0] = 1.0
+    _, logdet_flow = cfde.flow(x, z, mode='direct')
+    def flow_fn(x_in):
+        u_out, _ = cfde.flow(x_in.unsqueeze(0), z, mode='direct')
+        return u_out.squeeze(0)
+    J = torch.autograd.functional.jacobian(flow_fn, x.squeeze(0))
+    _, logdet_num = torch.linalg.slogdet(J)
+    diff = abs(logdet_flow.item() - logdet_num.item())
+    assert diff < 0.5, f"Log-det mismatch: flow={logdet_flow.item():.4f}, numerical={logdet_num.item():.4f}, diff={diff:.4f}"
+    print("  PASS: test_cfde_logdet_correctness")
+
+def test_cfde_autoregressive_masking():
+    """MADE Jacobian of mu w.r.t. input must be strictly lower-triangular."""
+    torch.manual_seed(42)
+    input_dim, n_types = 4, 3
+    made = _MADE(num_inputs=input_dim, num_hidden=32, num_cond_inputs=n_types, act='relu')
+    made.eval()
+    x = torch.randn(1, input_dim, requires_grad=True)
+    z = torch.zeros(1, n_types); z[:, 0] = 1.0
+    h = made.joiner(x, z)
+    out = made.trunk(h)
+    mu, _ = out.chunk(2, dim=1)
+    J_mu = torch.zeros(input_dim, input_dim)
+    for i in range(input_dim):
+        if x.grad is not None:
+            x.grad.zero_()
+        mu[0, i].backward(retain_graph=True)
+        J_mu[i] = x.grad[0].clone()
+    upper_max = torch.triu(J_mu, diagonal=0).abs().max().item()
+    assert upper_max < 1e-5, f"Upper triangle not zero: max={upper_max:.2e}"
+    print("  PASS: test_cfde_autoregressive_masking")
+
+def test_cfde_density_normalizes():
+    """For a 2D CFDE, numerically integrating exp(log_prob) over R^2 must give ~1.0."""
+    torch.manual_seed(42)
+    cfde = CFDE(input_dim=2, n_types=2, hidden_dims=[16, 16])
+    cfde.flow.train()
+    _ = cfde.flow(torch.randn(100, 2), torch.zeros(100, 2), mode='direct')
+    cfde.flow.eval()
+    grid = np.linspace(-5, 5, 200)
+    dx = grid[1] - grid[0]
+    xx, yy = np.meshgrid(grid, grid)
+    pts = torch.tensor(np.stack([xx.ravel(), yy.ravel()], axis=1).astype(np.float32))
+    z_g = torch.zeros(len(pts), 2); z_g[:, 0] = 1.0
+    lp = []
+    with torch.no_grad():
+        for i in range(0, len(pts), 1000):
+            lp.append(cfde.flow.log_probs(pts[i:i+1000], z_g[i:i+1000]).squeeze(-1))
+    lp = torch.cat(lp)
+    integral = float(torch.exp(lp).sum() * dx * dx)
+    assert 0.7 < integral < 1.3, f"Density integral {integral:.4f} not near 1.0"
+    print("  PASS: test_cfde_density_normalizes")
+
+def test_cfde_type_recovery():
+    """MMICRL must recover known types from synthetic demos with >55% accuracy."""
+    import warnings
+    warnings.filterwarnings('ignore')
+    torch.manual_seed(42)
+    np.random.seed(42)
+    collector = DemonstrationCollector(n_muscles=3)
+    collector.generate_synthetic_demos(n_workers=9, n_episodes_per_worker=30)
+    gt_types = np.array([wid % 3 for wid in collector.worker_ids])
+    mmicrl = MMICRL(n_types=3, lambda1=1.0, lambda2=1.0, n_muscles=3, n_iterations=100)
+    results = mmicrl.fit(collector)
+    pred_types = mmicrl.type_assignments
+    best_acc = 0.0
+    for perm in permutations(range(3)):
+        remapped = np.array([perm[p] for p in pred_types])
+        acc = (remapped == gt_types).mean()
+        if acc > best_acc:
+            best_acc = acc
+    assert best_acc > 0.55, f"Type recovery {best_acc:.3f} <= 0.55 (random=0.33)"
+    assert results["mutual_information"] > 0, f"MI={results['mutual_information']} not positive"
+    print(f"  PASS: test_cfde_type_recovery (acc={best_acc:.3f}, MI={results['mutual_information']:.4f})")
 
 
 # ===========================================================================
@@ -208,6 +328,10 @@ if __name__ == "__main__":
         test_demo_collector_synthetic, test_demo_features_shape,
         test_mmicrl_fit, test_mmicrl_lambda_equality,
         test_mmicrl_type_assignment, test_mmicrl_discovers_types,
+        # CFDE Mathematical Properties (L12)
+        test_cfde_invertibility, test_cfde_logdet_correctness,
+        test_cfde_autoregressive_masking, test_cfde_density_normalizes,
+        test_cfde_type_recovery,
         # Online Adaptation
         test_online_adapter_init, test_online_adapter_update,
         test_online_adapter_alerts, test_online_adapter_tightening,

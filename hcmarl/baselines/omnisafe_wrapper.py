@@ -62,6 +62,7 @@ class OmniSafeWrapper:
 
     def get_actions(self, observations, **kwargs):
         actions = {}
+        log_probs = {}
         for agent_id, obs in observations.items():
             if self.agent is not None:
                 try:
@@ -71,7 +72,8 @@ class OmniSafeWrapper:
                     actions[agent_id] = np.random.randint(0, self.n_actions)
             else:
                 actions[agent_id] = np.random.randint(0, self.n_actions)
-        return actions
+            log_probs[agent_id] = 0.0
+        return actions, log_probs, 0.0
 
     def train(self, total_steps=1000000):
         """Train the OmniSafe agent."""
@@ -84,8 +86,44 @@ class OmniSafeWrapper:
             )
 
     def save(self, path):
+        """Save agent state. Falls back to numpy if OmniSafe unavailable."""
+        import json as _json
+        from pathlib import Path as _Path
+        _Path(path).parent.mkdir(parents=True, exist_ok=True)
+        state = {
+            "algo_name": self.algo_name,
+            "obs_dim": self.obs_dim,
+            "n_actions": self.n_actions,
+            "name": self.name,
+        }
         if self.agent:
-            self.agent.save(path)
+            try:
+                self.agent.save(path)
+                return
+            except Exception:
+                pass
+        with open(path, "w") as f:
+            _json.dump(state, f)
+
+    def load(self, path):
+        """Load agent state. No-op if OmniSafe unavailable (random policy)."""
+        import json as _json
+        from pathlib import Path as _Path
+        if self.agent:
+            try:
+                self.agent.load(path)
+                return
+            except Exception:
+                pass
+        # Fallback: load metadata only (agent stays as random policy)
+        if _Path(path).exists():
+            try:
+                with open(path) as f:
+                    state = _json.load(f)
+                self.algo_name = state.get("algo_name", self.algo_name)
+                self.name = state.get("name", self.name)
+            except Exception:
+                pass
 
     def evaluate(self, n_episodes: int = 10) -> Dict[str, float]:
         """Evaluate trained agent and return metrics."""

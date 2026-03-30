@@ -14,6 +14,7 @@ from gymnasium import spaces
 from typing import Dict, List, Optional, Tuple, Any
 import yaml
 import copy
+from hcmarl.envs.reward_functions import nswf_reward, safety_cost
 
 
 # ---------------------------------------------------------------------------
@@ -34,18 +35,25 @@ class SingleWorkerWarehouseEnv(gym.Env):
         max_steps: int = 60,
         kappa: float = 1.0,
         render_mode: Optional[str] = None,
+        ecbf_mode: str = "on",
     ):
         super().__init__()
+        if ecbf_mode not in ("on", "off"):
+            raise ValueError(f"ecbf_mode must be 'on' or 'off', got '{ecbf_mode}'")
+        self.ecbf_mode = ecbf_mode
         self.render_mode = render_mode
         self.dt = dt
         self.max_steps = max_steps
         self.kappa = kappa
 
         # Default muscle groups: shoulder, elbow, grip
+        # These are ISOMETRIC (F, R) from Table 1 — for sustained warehouse
+        # task holds. Dynamic tasks require re-calibration (see
+        # real_data_calibration.py for dynamic regime with 30-180x larger F).
         self.muscle_groups = muscle_groups or {
             "shoulder": {"F": 0.0146, "R": 0.00058, "r": 15},
             "elbow":    {"F": 0.00912, "R": 0.00094, "r": 15},
-            "grip":     {"F": 0.00794, "R": 0.00109, "r": 15},  # Looft et al. (2018)
+            "grip":     {"F": 0.00794, "R": 0.00109, "r": 30},  # Looft et al. (2018) Table 2: r=30 for hand grip
         }
         self.muscle_names = list(self.muscle_groups.keys())
         self.n_muscles = len(self.muscle_names)
@@ -64,7 +72,7 @@ class SingleWorkerWarehouseEnv(gym.Env):
 
         # Safety thresholds per muscle (must satisfy Eq 26: theta_max >= F/(F+R*r))
         self.theta_max = theta_max or {
-            "shoulder": 0.70, "elbow": 0.45, "grip": 0.35,  # grip raised: theta_min_max=32.7% with r=15
+            "shoulder": 0.70, "elbow": 0.45, "grip": 0.35,  # grip: theta_min_max=19.5% with r=30 (Table 1)
         }
 
         # Observation: [MR, MA, MF] per muscle + current_step_normalised
@@ -88,24 +96,23 @@ class SingleWorkerWarehouseEnv(gym.Env):
         return np.array(obs, dtype=np.float32)
 
     def _compute_reward(self, task_name: str) -> float:
-        """
-        Reward = productivity - fatigue penalty.
-        Productivity = sum of target loads (higher load = more work done).
-        Fatigue penalty = sum of MF across muscles.
-        """
+        """NSWF reward matching Eq 33 + Eq 32 of the math doc."""
         task = self.tasks[task_name]
         productivity = sum(task[m] for m in self.muscle_names)
-        fatigue_penalty = sum(self.state[m]["MF"] for m in self.muscle_names)
-        safety_violation = 0.0
-        for m in self.muscle_names:
-            if self.state[m]["MF"] > self.theta_max[m]:
-                safety_violation += 10.0 * (self.state[m]["MF"] - self.theta_max[m])
-        return productivity - 0.5 * fatigue_penalty - safety_violation
+        fatigue = {m: self.state[m]["MF"] for m in self.muscle_names}
+        return nswf_reward(productivity, fatigue, self.theta_max, kappa=self.kappa)
 
     def _integrate_3cc_r(self, task_name: str):
-        """Euler integration of 3CC-r ODEs for one timestep."""
+        """Euler integration of 3CC-r ODEs for one timestep.
+
+        Returns:
+            (ecbf_interventions, ecbf_clip_total): number of muscles where
+            the ECBF clipped the neural drive, and the total clipped magnitude.
+        """
         task = self.tasks[task_name]
         kp = 10.0  # proportional gain for baseline controller
+        ecbf_interventions = 0
+        ecbf_clip_total = 0.0
 
         for m in self.muscle_names:
             params = self.muscle_groups[m]
@@ -119,26 +126,35 @@ class SingleWorkerWarehouseEnv(gym.Env):
             MF = self.state[m]["MF"]
 
             # Neural drive (proportional controller)
-            C = kp * max(TL - MA, 0.0) if TL > 0 else 0.0
+            C_nominal = kp * max(TL - MA, 0.0) if TL > 0 else 0.0
 
-            # ECBF safety clipping (simplified analytical bound)
             R_eff = R_base if TL > 0 else R_base * r
-            # Fatigue ceiling bound (Eq 19 simplified)
-            alpha1, alpha2 = 0.5, 0.5
-            h = self.theta_max[m] - MF
-            h_dot = -F * MA + R_eff * MF
-            psi1 = h_dot + alpha1 * h
-            ecbf_bound = (1.0 / F) * (
-                F**2 * MA + R_eff * F * MA - R_eff**2 * MF
-                + alpha1 * (-F * MA + R_eff * MF)
-                + alpha2 * psi1
-            )
-            # Resting floor bound (Eq 23)
-            alpha3 = 0.5
-            cbf_bound = R_eff * MF + alpha3 * MR
 
-            C_max = min(ecbf_bound, cbf_bound)
-            C = max(0.0, min(C, C_max))
+            if self.ecbf_mode == "on":
+                # ECBF safety clipping (simplified analytical bound)
+                # Fatigue ceiling bound (Eq 19 simplified, match ecbf_filter.py defaults)
+                alpha1, alpha2 = 0.05, 0.05
+                h = self.theta_max[m] - MF
+                h_dot = -F * MA + R_eff * MF
+                psi1 = h_dot + alpha1 * h
+                ecbf_bound = (1.0 / F) * (
+                    F**2 * MA + R_eff * F * MA - R_eff**2 * MF
+                    + alpha1 * (-F * MA + R_eff * MF)
+                    + alpha2 * psi1
+                )
+                # Resting floor bound (Eq 23, match ecbf_filter.py defaults)
+                alpha3 = 0.1
+                cbf_bound = R_eff * MF + alpha3 * MR
+                C_max = min(ecbf_bound, cbf_bound)
+                C = max(0.0, min(C_nominal, C_max))
+            else:
+                # ecbf_mode == "off": no safety filtering
+                C = max(0.0, C_nominal)
+
+            # Track ECBF interventions
+            if C_nominal > 1e-9 and (C_nominal - C) > 1e-9:
+                ecbf_interventions += 1
+                ecbf_clip_total += C_nominal - C
 
             # ODEs (Eqs 2-4)
             dMA = C - F * MA
@@ -162,6 +178,8 @@ class SingleWorkerWarehouseEnv(gym.Env):
 
             self.state[m] = {"MR": MR_new, "MA": MA_new, "MF": MF_new}
 
+        return ecbf_interventions, float(ecbf_clip_total)
+
     def reset(self, seed=None, options=None) -> Tuple[np.ndarray, dict]:
         super().reset(seed=seed)
         self.current_step = 0
@@ -172,7 +190,7 @@ class SingleWorkerWarehouseEnv(gym.Env):
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, dict]:
         task_name = self.task_names[action]
-        self._integrate_3cc_r(task_name)
+        ecbf_interventions, ecbf_clip_total = self._integrate_3cc_r(task_name)
         self.current_step += 1
 
         obs = self._get_obs()
@@ -180,13 +198,15 @@ class SingleWorkerWarehouseEnv(gym.Env):
         terminated = self.current_step >= self.max_steps
         truncated = False
 
+        fatigue = {m: self.state[m]["MF"] for m in self.muscle_names}
+        cost = safety_cost(fatigue, self.theta_max)
         info = {
             "task": task_name,
-            "fatigue": {m: self.state[m]["MF"] for m in self.muscle_names},
-            "safety_violations": sum(
-                1 for m in self.muscle_names
-                if self.state[m]["MF"] > self.theta_max[m]
-            ),
+            "fatigue": fatigue,
+            "violations": sum(1 for m in self.muscle_names if fatigue[m] > self.theta_max[m]),
+            "cost": cost,
+            "ecbf_interventions": ecbf_interventions,
+            "ecbf_clip_total": ecbf_clip_total,
         }
         return obs, reward, terminated, truncated, info
 
@@ -225,16 +245,22 @@ class WarehouseMultiAgentEnv:
         dt: float = 1.0,
         max_steps: int = 60,
         kappa: float = 1.0,
+        ecbf_mode: str = "on",
     ):
+        if ecbf_mode not in ("on", "off"):
+            raise ValueError(f"ecbf_mode must be 'on' or 'off', got '{ecbf_mode}'")
+        self.ecbf_mode = ecbf_mode
         self.n_workers = n_workers
         self.dt = dt
         self.max_steps = max_steps
         self.kappa = kappa
 
+        # Isometric (F, R) from Table 1 — for sustained warehouse task holds.
+        # Dynamic tasks require re-calibration; see real_data_calibration.py.
         self.muscle_groups = muscle_groups or {
             "shoulder": {"F": 0.0146, "R": 0.00058, "r": 15},
             "elbow":    {"F": 0.00912, "R": 0.00094, "r": 15},
-            "grip":     {"F": 0.00794, "R": 0.00109, "r": 15},  # Looft et al. (2018)
+            "grip":     {"F": 0.00794, "R": 0.00109, "r": 30},  # Looft et al. (2018) Table 2: r=30 for hand grip
         }
         self.muscle_names = list(self.muscle_groups.keys())
         self.n_muscles = len(self.muscle_names)
@@ -249,7 +275,7 @@ class WarehouseMultiAgentEnv:
         self.n_tasks = len(self.task_names)
 
         self.theta_max = theta_max or {
-            "shoulder": 0.70, "elbow": 0.45, "grip": 0.35,  # grip raised: theta_min_max=32.7% with r=15
+            "shoulder": 0.70, "elbow": 0.45, "grip": 0.35,  # grip: theta_min_max=19.5% with r=30 (Table 1)
         }
 
         # Agent IDs
@@ -294,28 +320,24 @@ class WarehouseMultiAgentEnv:
         obs.append(self.current_step / self.max_steps)
         return np.array(obs, dtype=np.float32)
 
-    def _disagreement_utility(self, mf: float) -> float:
-        """Di(MF) = κ · MF² / (1 - MF), Eq 32."""
-        if mf >= 0.999:
-            return 1e6
-        return self.kappa * (mf ** 2) / (1.0 - mf)
-
     def _compute_reward(self, worker_idx: int, task_name: str) -> float:
+        """NSWF reward matching Eq 33 + Eq 32 of the math doc."""
         task = self.tasks[task_name]
         productivity = sum(task[m] for m in self.muscle_names)
-        avg_mf = np.mean([self.states[worker_idx][m]["MF"] for m in self.muscle_names])
-        di = self._disagreement_utility(avg_mf)
-        surplus = max(productivity - di, 0.0)
-        violation = sum(
-            1.0 for m in self.muscle_names
-            if self.states[worker_idx][m]["MF"] > self.theta_max[m]
-        )
-        return surplus - 5.0 * violation
+        fatigue = {m: self.states[worker_idx][m]["MF"] for m in self.muscle_names}
+        return nswf_reward(productivity, fatigue, self.theta_max, kappa=self.kappa)
 
     def _integrate_worker(self, worker_idx: int, task_name: str):
-        """Integrate 3CC-r for one worker, one timestep, with ECBF filtering."""
+        """Integrate 3CC-r for one worker, one timestep, with ECBF filtering.
+
+        Returns:
+            (ecbf_interventions, ecbf_clip_total): number of muscles where
+            the ECBF clipped the neural drive, and the total clipped magnitude.
+        """
         task = self.tasks[task_name]
         kp = 10.0
+        ecbf_interventions = 0
+        ecbf_clip_total = 0.0
 
         for m in self.muscle_names:
             params = self.muscle_groups[m]
@@ -327,21 +349,30 @@ class WarehouseMultiAgentEnv:
             s = self.states[worker_idx][m]
             MR, MA, MF = s["MR"], s["MA"], s["MF"]
 
-            C = kp * max(TL - MA, 0.0) if TL > 0 else 0.0
+            C_nominal = kp * max(TL - MA, 0.0) if TL > 0 else 0.0
             R_eff = R_base if TL > 0 else R_base * r_mult
 
-            # ECBF analytical bound
-            alpha1, alpha2, alpha3 = 0.5, 0.5, 0.5
-            h = self.theta_max[m] - MF
-            h_dot = -F * MA + R_eff * MF
-            psi1 = h_dot + alpha1 * h
-            ecbf_bound = (1.0 / F) * (
-                F**2 * MA + R_eff * F * MA - R_eff**2 * MF
-                + alpha1 * (-F * MA + R_eff * MF)
-                + alpha2 * psi1
-            )
-            cbf_bound = R_eff * MF + alpha3 * MR
-            C = max(0.0, min(C, max(0.0, ecbf_bound), cbf_bound))
+            if self.ecbf_mode == "on":
+                # ECBF analytical bound (match ecbf_filter.py defaults and proofs)
+                alpha1, alpha2, alpha3 = 0.05, 0.05, 0.1
+                h = self.theta_max[m] - MF
+                h_dot = -F * MA + R_eff * MF
+                psi1 = h_dot + alpha1 * h
+                ecbf_bound = (1.0 / F) * (
+                    F**2 * MA + R_eff * F * MA - R_eff**2 * MF
+                    + alpha1 * (-F * MA + R_eff * MF)
+                    + alpha2 * psi1
+                )
+                cbf_bound = R_eff * MF + alpha3 * MR
+                C = max(0.0, min(C_nominal, max(0.0, ecbf_bound), cbf_bound))
+            else:
+                # ecbf_mode == "off": no safety filtering
+                C = max(0.0, C_nominal)
+
+            # Track ECBF interventions
+            if C_nominal > 1e-9 and (C_nominal - C) > 1e-9:
+                ecbf_interventions += 1
+                ecbf_clip_total += C_nominal - C
 
             dMA = C - F * MA
             dMF = F * MA - R_eff * MF
@@ -357,6 +388,8 @@ class WarehouseMultiAgentEnv:
                 MR_new /= total
 
             self.states[worker_idx][m] = {"MR": MR_new, "MA": MA_new, "MF": MF_new}
+
+        return ecbf_interventions, float(ecbf_clip_total)
 
     def reset(self, seed=None) -> Tuple[Dict[str, np.ndarray], Dict]:
         self.agents = list(self.possible_agents)
@@ -381,11 +414,17 @@ class WarehouseMultiAgentEnv:
             idx = int(agent.split("_")[1])
             task_idx = actions[agent]
             task_name = self.task_names[task_idx]
-            self._integrate_worker(idx, task_name)
+            ecbf_interventions, ecbf_clip_total = self._integrate_worker(idx, task_name)
             rewards[agent] = self._compute_reward(idx, task_name)
+            fatigue = {m: self.states[idx][m]["MF"] for m in self.muscle_names}
+            cost = safety_cost(fatigue, self.theta_max)
             infos[agent] = {
                 "task": task_name,
-                "fatigue": {m: self.states[idx][m]["MF"] for m in self.muscle_names},
+                "fatigue": fatigue,
+                "violations": sum(1 for m in fatigue if fatigue[m] > self.theta_max[m]),
+                "cost": cost,
+                "ecbf_interventions": ecbf_interventions,
+                "ecbf_clip_total": ecbf_clip_total,
             }
 
         self.current_step += 1

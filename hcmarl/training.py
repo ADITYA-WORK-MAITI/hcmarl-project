@@ -254,11 +254,11 @@ def run_ablation_studies(
         }
 
         for ablation_name, config in configs.items():
-            # Modify environment based on ablation
+            # Isometric (F, R) from Table 1 for sustained warehouse holds
             muscle_groups = {
                 "shoulder": {"F": 0.0146, "R": 0.00058, "r": 15 if config["reperfusion"] else 1},
                 "elbow":    {"F": 0.00912, "R": 0.00094, "r": 15 if config["reperfusion"] else 1},
-                "grip":     {"F": 0.00794, "R": 0.00109, "r": 15 if config["reperfusion"] else 1},  # Looft et al. (2018)
+                "grip":     {"F": 0.00794, "R": 0.00109, "r": 30 if config["reperfusion"] else 1},  # Looft et al. (2018) Table 2: r=30 for hand grip
             }
 
             env = WarehouseMultiAgentEnv(
