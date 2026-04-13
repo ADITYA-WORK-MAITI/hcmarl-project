@@ -166,7 +166,7 @@ class ThreeCCr:
             Default 10.0 provides fast tracking of target load.
     """
 
-    def __init__(self, params: MuscleParams, kp: float = 10.0) -> None:
+    def __init__(self, params: MuscleParams, kp: float = 1.0) -> None:
         self.params = params
         self.kp = kp
 
@@ -275,11 +275,21 @@ class ThreeCCr:
         dx = self.ode_rhs(x, C, target_load)
         x_new = x + dt * dx
 
-        # Clamp to [0, 1] and re-normalise to enforce conservation (Eq 1)
-        x_new = np.clip(x_new, 0.0, 1.0)
-        total = x_new.sum()
-        if total > 0.0:
-            x_new = x_new / total
+        # Guard: if any component drifts slightly negative due to
+        # floating-point, clamp to zero and adjust MR to preserve
+        # conservation exactly (no renormalization — that corrupts state).
+        for i in range(3):
+            if x_new[i] < 0.0:
+                x_new[i] = 0.0
+        # Re-derive MR from conservation: MR = 1 - MA - MF
+        x_new[0] = 1.0 - x_new[1] - x_new[2]
+        if x_new[0] < 0.0:
+            # MA + MF > 1: proportionally scale MA and MF to sum to 1
+            s = x_new[1] + x_new[2]
+            if s > 0:
+                x_new[1] /= s
+                x_new[2] /= s
+            x_new[0] = 0.0
 
         return ThreeCCrState.from_array(x_new)
 
@@ -319,7 +329,9 @@ class ThreeCCr:
         t_eval = np.arange(0.0, duration + dt_eval * 0.5, dt_eval)
         x0 = state0.as_array()
 
-        C_values = []
+        # S-1: Removed dead C_values list that was appended inside the RHS
+        # callback at every internal RK45 stage (non-monotonic, non-uniform
+        # times) but never returned. C is recomputed at eval points below.
 
         def rhs(t: float, x: np.ndarray) -> np.ndarray:
             MR, MA, MF = x[0], x[1], x[2]
@@ -327,7 +339,6 @@ class ThreeCCr:
                 C = C_override
             else:
                 C = self.baseline_neural_drive(target_load, MA)
-            C_values.append(C)
             return self.ode_rhs(x, C, target_load)
 
         sol = solve_ivp(

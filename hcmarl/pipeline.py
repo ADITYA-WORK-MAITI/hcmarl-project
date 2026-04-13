@@ -103,7 +103,21 @@ class WorkerState:
     def fatigue_for_allocation(self) -> float:
         """Return the fatigue level used by the NSWF allocator.
 
-        Uses max fatigue across all muscles as the aggregate measure.
+        S-8: Uses max(MF) across all muscles as the aggregate scalar MF_i
+        for worker i in the NSWF objective (Eq 32-33). The math doc writes
+        D_i(MF_i) with a single scalar per worker but does not specify how
+        to aggregate across muscle groups.
+
+        Design choice: max(MF) is the conservative bottleneck measure.
+        Rationale:
+          1. The binary safety cost (safety_cost in reward_functions.py)
+             triggers when ANY muscle exceeds theta_max. Using max(MF) for
+             the disagreement utility aligns the allocation objective with
+             the safety constraint -- both are bottleneck-driven.
+          2. A worker with one highly fatigued muscle is operationally
+             limited by that muscle regardless of how fresh the others are.
+          3. Consistent with reward_functions.nswf_reward() which also uses
+             max(MF) (see S-15 documentation there).
         """
         return self.max_fatigue()
 
@@ -347,7 +361,7 @@ class HCMARLPipeline:
         num_workers = cfg.get("num_workers", 4)
         muscle_names = cfg.get("muscle_names", ["shoulder", "elbow", "grip"])
         dt = cfg.get("dt", 1.0)
-        kp = cfg.get("kp", 10.0)
+        kp = cfg.get("kp", 1.0)
 
         # Task profiles
         task_profiles = []
@@ -364,13 +378,26 @@ class HCMARLPipeline:
         for m_name in muscle_names:
             m_ecbf = ecbf_cfg.get(m_name, {})
             mp = get_muscle(m_name)
-            # Default theta_max to 10% above the rest-phase threshold
-            default_theta = min(mp.theta_min_max * 1.1, 0.95)
+            # S-7: Additive 10pp margin above theta_min_max (Eq 25-26).
+            # Multiplicative (1.1x) gave razor-thin margins for high-theta_min_max
+            # muscles (shoulder 6.3pp, elbow 3.9pp). Additive 10pp is meaningful
+            # for all muscles regardless of theta_min_max magnitude.
+            default_theta = min(mp.theta_min_max + 0.10, 0.95)
+            if "theta_max" not in m_ecbf:
+                import warnings
+                warnings.warn(
+                    f"No explicit theta_max for '{m_name}' in config. "
+                    f"Using default {default_theta:.3f} "
+                    f"(theta_min_max={mp.theta_min_max:.3f} + 0.10). "
+                    f"Specify ecbf.{m_name}.theta_max in your config for "
+                    f"reproducible experiments.",
+                    UserWarning, stacklevel=2,
+                )
             ecbf_params_per_muscle[m_name] = ECBFParams(
                 theta_max=m_ecbf.get("theta_max", default_theta),
-                alpha1=m_ecbf.get("alpha1", 0.05),
-                alpha2=m_ecbf.get("alpha2", 0.05),
-                alpha3=m_ecbf.get("alpha3", 0.1),
+                alpha1=m_ecbf.get("alpha1", 0.5),
+                alpha2=m_ecbf.get("alpha2", 0.5),
+                alpha3=m_ecbf.get("alpha3", 0.5),
             )
 
         # NSWF params

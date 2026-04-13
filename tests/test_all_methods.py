@@ -29,24 +29,17 @@ def test_mappo_lag_instantiation():
     ml = MAPPOLagrangian(obs_dim=19, global_obs_dim=73, n_actions=6, n_agents=4)
     assert ml.lam > 0; print("  PASS: test_mappo_lag_instantiation")
 
-def test_omnisafe_wrapper():
-    from hcmarl.baselines.omnisafe_wrapper import OmniSafeWrapper
-    w = OmniSafeWrapper("PPOLag", obs_dim=19, n_actions=6)
-    obs = {"worker_0": np.zeros(19, dtype=np.float32)}
-    result = w.get_actions(obs)
-    actions = result[0] if isinstance(result, tuple) else result
-    assert "worker_0" in actions; print("  PASS: test_omnisafe_wrapper")
-
-def test_safepo_wrapper():
+def test_safepo_wrapper_honest_label():
     from hcmarl.baselines.safepo_wrapper import SafePOWrapper
     w = SafePOWrapper(obs_dim=19, n_actions=6, n_agents=4)
+    assert w.name == "MAPPO-Lagrangian", f"Expected honest label, got: {w.name}"
     obs = {"worker_0": np.zeros(19, dtype=np.float32)}
     result = w.get_actions(obs)
     actions = result[0] if isinstance(result, tuple) else result
-    assert "worker_0" in actions; print("  PASS: test_safepo_wrapper")
+    assert "worker_0" in actions; print("  PASS: test_safepo_wrapper_honest_label")
 
 if __name__ == "__main__":
     print("=== All Methods Tests ===")
     for t in [test_random_policy, test_mappo_instantiation, test_ippo_instantiation,
-              test_mappo_lag_instantiation, test_omnisafe_wrapper, test_safepo_wrapper]: t()
+              test_mappo_lag_instantiation, test_safepo_wrapper_honest_label]: t()
     print("All passed.")

@@ -35,14 +35,28 @@ class LagrangianRolloutBuffer:
         self._n_steps = 0
         self._legacy_pending = None
 
-    def store(self, obs, global_state, action, log_prob, reward, cost, done, value, cost_value):
-        """Per-agent store. Accumulates calls then flushes per timestep."""
+    def store(self, obs, global_state, action, log_prob, reward, cost, done, values, cost_values):
+        """Per-agent store. Accumulates N calls then flushes one timestep.
+
+        S-21: Call-order contract — this method must be called exactly N
+        times per timestep (once per agent), in the order matching
+        self.agent_ids. The i-th call stores data for agent_ids[i].
+        After the N-th call, the accumulated data is flushed to the
+        internal buffers as one complete timestep. Calling more than N
+        times before flush raises RuntimeError.
+
+        Args:
+            values: dict {agent_id: float} -- per-agent critic values (C-9.A).
+                Also accepts scalar for backward compat.
+            cost_values: dict {agent_id: float} -- per-agent cost critic values.
+                Also accepts scalar for backward compat.
+        """
         if self._legacy_pending is None:
             self._legacy_pending = {
                 'obs': {}, 'actions': {}, 'log_probs': {}, 'rewards': {},
                 'costs': {},
                 'global_state': global_state, 'done': done,
-                'value': value, 'cost_value': cost_value,
+                'value': values, 'cost_value': cost_values,
                 '_call_count': 0,
             }
 
@@ -51,6 +65,13 @@ class LagrangianRolloutBuffer:
                              "Pass agent_ids at construction time.")
 
         idx = self._legacy_pending['_call_count']
+        # S-21: Guard against overflow — more calls than agents
+        if idx >= len(self.agent_ids):
+            raise RuntimeError(
+                f"LagrangianRolloutBuffer.store() called {idx+1} times "
+                f"for a {len(self.agent_ids)}-agent buffer. Expected exactly "
+                f"{len(self.agent_ids)} calls per timestep."
+            )
         if idx < len(self.agent_ids):
             a = self.agent_ids[idx]
             self._legacy_pending['obs'][a] = obs
@@ -70,20 +91,43 @@ class LagrangianRolloutBuffer:
                 self._costs[a].append(p['costs'][a])
             self._global_states.append(p['global_state'])
             self._dones.append(float(p['done']))
-            self._values.append(p['value'])
-            self._cost_values.append(p['cost_value'])
+            # C-9.A: per-agent values (dict or scalar)
+            v = p['value']
+            cv = p['cost_value']
+            if isinstance(v, dict):
+                self._values.append(v)
+            else:
+                self._values.append({a: float(v) for a in self.agent_ids})
+            if isinstance(cv, dict):
+                self._cost_values.append(cv)
+            else:
+                self._cost_values.append({a: float(cv) for a in self.agent_ids})
             self._n_steps += 1
             self._legacy_pending = None
 
-    def compute_returns(self, last_value, last_cost_value, gamma=0.99, gae_lambda=0.95):
-        """Compute reward GAE and cost GAE per-agent, then flatten."""
+    def compute_returns(self, last_values, last_cost_values, gamma=0.99, gae_lambda=0.95,
+                         last_episode_truncated=True):
+        """Compute reward GAE and cost GAE per-agent with per-agent baselines, then flatten.
+
+        C-9.A fix: Uses per-agent value baselines instead of shared values.
+        S-19 fix: Proper truncation handling -- see RolloutBuffer.compute_returns.
+
+        Args:
+            last_values: dict {agent_id: float} or scalar -- bootstrap values.
+            last_cost_values: dict {agent_id: float} or scalar -- bootstrap cost values.
+            last_episode_truncated: If True, don't zero bootstrap at T-1 (time limit).
+        """
         T = self._n_steps
         if T == 0:
             return np.zeros(0), np.zeros(0), np.zeros(0), np.zeros(0)
 
-        values = np.array(self._values)
-        cost_values = np.array(self._cost_values)
         dones = np.array(self._dones)
+
+        # Handle scalar for backward compat
+        if not isinstance(last_values, dict):
+            last_values = {a: float(last_values) for a in self.agent_ids}
+        if not isinstance(last_cost_values, dict):
+            last_cost_values = {a: float(last_cost_values) for a in self.agent_ids}
 
         all_advantages, all_returns = [], []
         all_cost_advantages, all_cost_returns = [], []
@@ -91,30 +135,44 @@ class LagrangianRolloutBuffer:
         for a in self.agent_ids:
             rewards_a = np.array(self._rewards[a])
             costs_a = np.array(self._costs[a])
+            values_a = np.array([v[a] for v in self._values])  # (T,) per agent
+            cost_values_a = np.array([v[a] for v in self._cost_values])  # (T,)
 
             # Reward GAE
             adv_a = np.zeros(T)
             last_gae = 0.0
             for t in reversed(range(T)):
-                next_val = last_value if t == T - 1 else values[t + 1]
-                next_non_term = 1.0 - dones[t]
-                delta = rewards_a[t] + gamma * next_val * next_non_term - values[t]
+                if t == T - 1:
+                    next_val = last_values[a]
+                    # S-19: truncation -> keep bootstrap; termination -> zero it
+                    # S-20: done mask at intermediate steps correctly handles
+                    # episode boundaries (next_non_term=0 when done[t]=1)
+                    next_non_term = 1.0 if last_episode_truncated else (1.0 - dones[t])
+                else:
+                    next_val = values_a[t + 1]
+                    next_non_term = 1.0 - dones[t]
+                delta = rewards_a[t] + gamma * next_val * next_non_term - values_a[t]
                 last_gae = delta + gamma * gae_lambda * next_non_term * last_gae
                 adv_a[t] = last_gae
             all_advantages.append(adv_a)
-            all_returns.append(adv_a + values)
+            all_returns.append(adv_a + values_a)
 
             # Cost GAE
             cadv_a = np.zeros(T)
             last_gae = 0.0
             for t in reversed(range(T)):
-                next_cv = last_cost_value if t == T - 1 else cost_values[t + 1]
-                next_non_term = 1.0 - dones[t]
-                delta = costs_a[t] + gamma * next_cv * next_non_term - cost_values[t]
+                if t == T - 1:
+                    next_cv = last_cost_values[a]
+                    # S-19/S-20: same truncation/done-mask logic as reward GAE
+                    next_non_term = 1.0 if last_episode_truncated else (1.0 - dones[t])
+                else:
+                    next_cv = cost_values_a[t + 1]
+                    next_non_term = 1.0 - dones[t]
+                delta = costs_a[t] + gamma * next_cv * next_non_term - cost_values_a[t]
                 last_gae = delta + gamma * gae_lambda * next_non_term * last_gae
                 cadv_a[t] = last_gae
             all_cost_advantages.append(cadv_a)
-            all_cost_returns.append(cadv_a + cost_values)
+            all_cost_returns.append(cadv_a + cost_values_a)
 
         # Interleave: (T, N) -> (T*N,)
         advantages = np.stack(all_advantages, axis=1).reshape(-1)
@@ -125,16 +183,23 @@ class LagrangianRolloutBuffer:
         return advantages, returns, cost_advantages, cost_returns
 
     def get_flat_tensors(self, device):
-        """Get flattened tensors for PPO update. Shape: (T*N, ...)."""
+        """Get flattened tensors for PPO update. Shape: (T*N, ...).
+
+        C-9.A fix: Global states augmented with agent-id one-hot.
+        """
         T = self._n_steps
+        N = len(self.agent_ids)
         obs_list, gs_list, acts_list, lp_list = [], [], [], []
         for t in range(T):
-            for a in self.agent_ids:
+            for i, a in enumerate(self.agent_ids):
                 obs_list.append(self._obs[a][t])
                 acts_list.append(self._actions[a][t])
                 lp_list.append(self._log_probs[a][t])
-            for _ in self.agent_ids:
-                gs_list.append(self._global_states[t])
+                # Augment global state with agent-id one-hot
+                one_hot = np.zeros(N, dtype=np.float32)
+                one_hot[i] = 1.0
+                gs_aug = np.concatenate([self._global_states[t], one_hot])
+                gs_list.append(gs_aug)
 
         import torch
         obs = torch.FloatTensor(np.array(obs_list)).to(device)
@@ -168,12 +233,19 @@ class MAPPOLagrangian:
 
         self.log_lambda = nn.Parameter(torch.tensor(np.log(max(lambda_init, 1e-8)), device=self.device))
         self.actor = ActorNetwork(obs_dim, n_actions).to(self.device)
-        self.critic = CriticNetwork(global_obs_dim).to(self.device)
-        self.cost_critic = CostCriticNetwork(global_obs_dim).to(self.device)
+        # C-9.A: Critic input = global_obs + agent_id one-hot for per-agent values
+        self.critic = CriticNetwork(global_obs_dim + n_agents).to(self.device)
+        self.cost_critic = CostCriticNetwork(global_obs_dim + n_agents).to(self.device)
         self.actor_optim = optim.Adam(self.actor.parameters(), lr=lr_actor)
         self.critic_optim = optim.Adam(self.critic.parameters(), lr=lr_critic)
         self.cost_critic_optim = optim.Adam(self.cost_critic.parameters(), lr=lr_critic)
         self.lambda_optim = optim.Adam([self.log_lambda], lr=lr_lambda)
+        # C-10.B: PID Lagrangian state (Stooke et al. 2020)
+        self._pid_integral = 0.0
+        self._pid_prev_error = 0.0
+        self._pid_kp = 1.0
+        self._pid_ki = 0.01
+        self._pid_kd = 0.01
         agent_ids = [f"worker_{i}" for i in range(n_agents)]
         self.buffer = LagrangianRolloutBuffer(agent_ids=agent_ids)
 
@@ -181,18 +253,27 @@ class MAPPOLagrangian:
     def lam(self):
         return self.log_lambda.exp().item()
 
+    def _augment_gs(self, gs_tensor, agent_idx):
+        """Append agent-id one-hot to global state for per-agent critic (C-9.A)."""
+        one_hot = torch.zeros(self.n_agents, device=self.device)
+        one_hot[agent_idx] = 1.0
+        return torch.cat([gs_tensor, one_hot])
+
     def get_actions(self, observations, global_state):
-        actions, log_probs = {}, {}
+        actions, log_probs, values, cost_values = {}, {}, {}, {}
         gs = torch.FloatTensor(global_state).to(self.device)
-        value = self.critic(gs).item()
-        cost_value = self.cost_critic(gs).item()
-        for agent_id, obs in observations.items():
-            obs_t = torch.FloatTensor(obs).to(self.device)
+        sorted_agents = sorted(observations.keys())
+        for i, agent_id in enumerate(sorted_agents):
+            obs_t = torch.FloatTensor(observations[agent_id]).to(self.device)
             with torch.no_grad():
                 action, lp, _ = self.actor.get_action(obs_t)
             actions[agent_id] = action.item()
             log_probs[agent_id] = lp.item()
-        return actions, log_probs, value, cost_value
+            # C-9.A: per-agent values via augmented global state
+            gs_aug = self._augment_gs(gs, i)
+            values[agent_id] = self.critic(gs_aug).item()
+            cost_values[agent_id] = self.cost_critic(gs_aug).item()
+        return actions, log_probs, values, cost_values
 
     def update(self):
         """PPO update with Lagrangian cost penalty on actor loss."""
@@ -202,14 +283,18 @@ class MAPPOLagrangian:
         obs, gs, acts, old_lp = self.buffer.get_flat_tensors(self.device)
 
         with torch.no_grad():
+            # C-9.A: per-agent bootstrap values
             last_gs = torch.FloatTensor(
                 self.buffer._global_states[-1]
             ).to(self.device)
-            last_val = self.critic(last_gs).item()
-            last_cv = self.cost_critic(last_gs).item()
+            last_values, last_cost_values = {}, {}
+            for i, a in enumerate(self.buffer.agent_ids):
+                gs_aug = self._augment_gs(last_gs, i)
+                last_values[a] = self.critic(gs_aug).item()
+                last_cost_values[a] = self.cost_critic(gs_aug).item()
 
         advantages, returns, cost_advantages, cost_returns = self.buffer.compute_returns(
-            last_val, last_cv, self.gamma, self.gae_lambda
+            last_values, last_cost_values, self.gamma, self.gae_lambda
         )
 
         adv_t = torch.FloatTensor(advantages).to(self.device)
@@ -218,7 +303,10 @@ class MAPPOLagrangian:
         cret_t = torch.FloatTensor(cost_returns).to(self.device)
 
         adv_t = (adv_t - adv_t.mean()) / (adv_t.std() + 1e-8)
-        cadv_t = (cadv_t - cadv_t.mean()) / (cadv_t.std() + 1e-8)
+        # C-10.A fix: Do NOT normalise cost advantages. Normalising cadv_t
+        # to mean~0 decouples the primal update (lam * cadv) from the dual
+        # update (raw mean_cost - cost_limit), breaking the Lagrangian.
+        # See Stooke et al. 2020 Section 5 for analysis of this footgun.
 
         lam = self.log_lambda.exp().detach()
 
@@ -266,11 +354,28 @@ class MAPPOLagrangian:
         }
 
     def update_lambda(self, mean_cost):
-        """Dual gradient ascent: increase lambda when cost > limit."""
-        loss = -self.log_lambda.exp() * (mean_cost - self.cost_limit)
-        self.lambda_optim.zero_grad()
-        loss.backward()
-        self.lambda_optim.step()
+        """PID Lagrangian update (Stooke et al. 2020, C-10.B).
+
+        Replaces raw gradient ascent with a PID controller on the cost
+        violation signal (mean_cost - cost_limit). This prevents the
+        oscillation and overshoot typical of primal-dual methods.
+        """
+        error = mean_cost - self.cost_limit
+        self._pid_integral += error
+        derivative = error - self._pid_prev_error
+        self._pid_prev_error = error
+
+        # PID output determines lambda
+        pid_output = (self._pid_kp * error
+                      + self._pid_ki * self._pid_integral
+                      + self._pid_kd * derivative)
+
+        # Set lambda directly from PID (softplus to keep positive)
+        new_lam = max(0.0, pid_output)
+        with torch.no_grad():
+            self.log_lambda.data = torch.tensor(
+                np.log(max(new_lam, 1e-8)), device=self.device
+            )
 
     def save(self, path):
         torch.save({"actor": self.actor.state_dict(), "critic": self.critic.state_dict(),

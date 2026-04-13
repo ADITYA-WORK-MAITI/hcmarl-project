@@ -29,13 +29,28 @@ the math doc: when D_i exceeds U(i,j), the worker should rest.
 import math
 from typing import Dict
 
+from hcmarl.nswf_allocator import NSWF_EPSILON
 
-def disagreement_utility(avg_mf: float, kappa: float = 1.0) -> float:
+
+def disagreement_utility(avg_mf: float, kappa: float = 1.0,
+                         disagreement_type: str = "divergent") -> float:
     """Eq 32: D_i(MF) = kappa * MF^2 / (1 - MF).
 
     Properties (Proposition 6.3):
       D(0) = 0, D'(MF) > 0 for MF in (0,1), D(MF) -> inf as MF -> 1.
+
+    Args:
+        avg_mf: Average (or max) fatigued fraction.
+        kappa: Scaling constant (Eq 32).
+        disagreement_type: "divergent" (Eq 32, default) or "constant" (D_i = kappa).
+            The "constant" variant is used in the no_divergent ablation to test
+            whether fatigue-dependent disagreement utility matters.
     """
+    if disagreement_type == "constant":
+        return kappa
+    # S-5: Symmetric boundary clamping — both MF<0 (float noise) and
+    # MF>=1 (Euler overshoot) are handled by clamping, not by raising
+    # ValueError. Asymmetric handling was flagged in audit.
     mf = max(0.0, min(avg_mf, 0.999))
     return kappa * (mf ** 2) / (1.0 - mf)
 
@@ -46,7 +61,8 @@ def nswf_reward(
     theta_max: Dict[str, float],
     kappa: float = 1.0,
     safety_weight: float = 5.0,
-    epsilon: float = 0.01,
+    epsilon: float = NSWF_EPSILON,
+    disagreement_type: str = "divergent",
 ) -> float:
     """Canonical HC-MARL reward matching Eq 33 + Eq 32.
 
@@ -57,12 +73,18 @@ def nswf_reward(
         kappa: Disagreement utility scaling (Eq 32).
         safety_weight: Penalty weight per violated muscle.
         epsilon: Rest surplus (Eq 31), must be > 0.
+        disagreement_type: "divergent" (Eq 32) or "constant" (D_i = kappa).
 
     Returns:
         Scalar reward for this worker at this timestep.
     """
+    # S-15: Aggregate multi-muscle fatigue via max(MF) — conservative worst-case
+    # muscle determines disagreement utility. Consistent with
+    # pipeline.WorkerState.fatigue_for_allocation() which also uses max(MF).
+    # Math doc Eq 32 uses scalar MF; max is the natural choice since the
+    # most-fatigued muscle limits the worker's capacity for the task.
     max_mf = max(fatigue_values.values()) if fatigue_values else 0.0
-    di = disagreement_utility(max_mf, kappa)
+    di = disagreement_utility(max_mf, kappa, disagreement_type)
     surplus = productivity - di
 
     # Log-transform matches NSWF objective (Eq 33)
@@ -86,6 +108,13 @@ def safety_cost(
 
     Returns 1.0 if ANY muscle exceeds its theta_max, else 0.0.
     Used by the cost critic and Lagrangian lambda update.
+
+    M-3: Binary (not continuous) cost is a standard design choice in
+    constrained RL (Tessler et al. 2018; Stooke et al. 2020). A continuous
+    cost (e.g. sum of max(0, MF-theta)) would provide richer gradient info
+    when multiple muscles violate simultaneously, but would require
+    recalibrating cost_limit. Acceptable for workshop paper; continuous
+    cost is future work.
     """
     for m in fatigue_values:
         if m in theta_max and fatigue_values[m] > theta_max[m]:

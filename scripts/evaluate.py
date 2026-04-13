@@ -53,6 +53,8 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
         tasks_per_worker = np.zeros(n_workers)
         peak_mf = 0.0
         forced_rests = 0
+        total_ecbf_interventions = 0
+        total_ecbf_opportunities = 0
         recovery_times = []
         in_violation = {i: False for i in range(n_workers)}
         violation_start = {i: 0 for i in range(n_workers)}
@@ -70,7 +72,15 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
                 fatigue = info.get("fatigue", {})
                 task = info.get("task", "rest")
                 for m, mf in fatigue.items():
-                    theta = env.theta_max.get(m, 1.0)
+                    # S-38: conservative default 0.5 with warning, not silent 1.0
+                    theta = env.theta_max.get(m, None)
+                    if theta is None:
+                        import warnings
+                        warnings.warn(
+                            f"theta_max missing for muscle '{m}', using conservative 0.5",
+                            UserWarning, stacklevel=2,
+                        )
+                        theta = 0.5
                     if mf > theta:
                         step_violations += 1
                         if not in_violation[i]:
@@ -83,10 +93,15 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
                     peak_mf = max(peak_mf, mf)
                 if task != "rest":
                     tasks_per_worker[i] += 1
-                else:
-                    avg_mf = np.mean(list(fatigue.values())) if fatigue else 0
-                    if avg_mf > 0.3:
-                        forced_rests += 1
+                # S-22: forced rest = ECBF safety filter actually intervened
+                ecbf_int = info.get("ecbf_interventions", 0)
+                total_ecbf_interventions += ecbf_int
+                if ecbf_int > 0:
+                    forced_rests += 1
+                # S-23: count only muscles with nonzero task demand
+                if task != "rest":
+                    demands = env.task_mgr.get_demand_vector(task)
+                    total_ecbf_opportunities += int((demands > 0).sum())
 
             total_violations += step_violations
             if step_violations == 0:
@@ -98,6 +113,7 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
         n_steps = step + 1
         n = n_workers
         jain = float((tasks_per_worker.sum()**2) / (n * (tasks_per_worker**2).sum() + 1e-8)) if tasks_per_worker.sum() > 0 else 1.0
+        sai = 1.0 - (total_ecbf_interventions / max(1, total_ecbf_opportunities))
 
         all_metrics["violation_rate"].append(total_violations / max(1, n_steps * n_workers * env.n_muscles))
         all_metrics["cumulative_cost"].append(float(total_violations))

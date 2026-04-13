@@ -12,16 +12,13 @@ import sys
 import yaml
 import subprocess
 
-BASELINES = ["mappo", "ippo", "mappo_lag", "ppo_lag", "cpo", "macpo"]
+BASELINES = ["mappo", "ippo", "mappo_lag"]
 SEEDS = [0, 1, 2, 3, 4]
 
 CONFIG_MAP = {
     "mappo": "config/mappo_config.yaml",
     "ippo": "config/ippo_config.yaml",
     "mappo_lag": "config/mappo_lag_config.yaml",
-    "ppo_lag": "config/ppo_lag_config.yaml",
-    "cpo": "config/cpo_config.yaml",
-    "macpo": "config/macpo_config.yaml",
 }
 
 def main():

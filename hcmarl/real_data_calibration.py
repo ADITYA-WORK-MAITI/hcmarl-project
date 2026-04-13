@@ -96,15 +96,16 @@ def predict_endurance_time(
         MA += dt_min * dMA
         MF += dt_min * dMF
 
-        # Clamp and renormalise (conservation law Eq 1)
-        if MR < 0: MR = 0.0
-        if MA < 0: MA = 0.0
-        if MF < 0: MF = 0.0
-        total = MR + MA + MF
-        if total > 0:
-            MR /= total
-            MA /= total
-            MF /= total
+        # Conservation-preserving guard (no renormalization)
+        MA = max(0.0, MA)
+        MF = max(0.0, MF)
+        MR = 1.0 - MA - MF
+        if MR < 0.0:
+            s = MA + MF
+            if s > 0:
+                MA /= s
+                MF /= s
+            MR = 0.0
 
         # Exhaustion: MR depleted (Frey-Law et al. 2012)
         if MR < 1e-4 and target_load > 0:
@@ -920,10 +921,16 @@ def generate_demonstrations_from_profiles(
 
                 dx = model.ode_rhs(state, C, TL)
                 state = state + dt_min * dx
-                state = np.clip(state, 0.0, 1.0)
-                total = state.sum()
-                if total > 0:
-                    state /= total
+                # Conservation-preserving guard (no renormalization)
+                state[1] = max(0.0, state[1])  # MA >= 0
+                state[2] = max(0.0, state[2])  # MF >= 0
+                state[0] = 1.0 - state[1] - state[2]  # MR from conservation
+                if state[0] < 0.0:
+                    s = state[1] + state[2]
+                    if s > 0:
+                        state[1] /= s
+                        state[2] /= s
+                    state[0] = 0.0
 
                 # Terminate at exhaustion if variable_length
                 if variable_length and state[0] < 0.01 and step > 5:

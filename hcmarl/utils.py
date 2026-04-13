@@ -94,17 +94,21 @@ def resolve_project_root() -> Path:
 # =========================================================================
 
 def clip_and_normalise(x: np.ndarray) -> np.ndarray:
-    """Clip array to [0, 1] and normalise so elements sum to 1.
+    """DEPRECATED — do not use for physiological state.
 
-    Used to enforce the conservation law MR + MA + MF = 1 after
-    numerical integration steps.
+    This function clips to [0,1] then divides by sum, which corrupts
+    the physics of the 3CC-r ODE (see audit C-1/C-2/C-5).  Use the
+    conservation-preserving guard instead:
+        MA = max(0, MA); MF = max(0, MF); MR = 1 - MA - MF
 
-    Args:
-        x: Array of non-negative values.
-
-    Returns:
-        Clipped and normalised array.
+    Kept only for backward compatibility with non-ODE callers.
     """
+    import warnings
+    warnings.warn(
+        "clip_and_normalise is deprecated — use conservation-preserving guard",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     x = np.clip(x, 0.0, 1.0)
     total = x.sum()
     if total > 0.0:
@@ -159,7 +163,12 @@ def seed_everything(seed: int) -> None:
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
+            # M-1: deterministic=True slows GPU ~1.5x but is required for
+            # reproducibility in research. benchmark=False ensures consistent
+            # algorithm selection across runs.
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
+            logger = get_logger(__name__)
+            logger.info("CUDA seed set; cudnn.deterministic=True (reproducible but ~1.5x slower)")
     except ImportError:
         pass

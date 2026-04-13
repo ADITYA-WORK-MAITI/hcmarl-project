@@ -17,6 +17,16 @@ import subprocess
 ABLATIONS = ["no_ecbf", "no_nswf", "no_mmicrl", "no_reperfusion", "no_divergent"]
 SEEDS = [0, 1, 2, 3, 4]
 
+# C-17: Per-ablation CLI flags to ensure each ablation actually changes behavior.
+# Belt-and-suspenders: config YAML keys AND CLI flags both work.
+ABLATION_FLAGS = {
+    "no_ecbf":        ["--ecbf-mode", "off"],
+    "no_nswf":        ["--no-nswf"],
+    "no_mmicrl":      [],  # config mmicrl.enabled=false + use_fixed_theta=true handles this
+    "no_reperfusion": [],  # config muscle_groups.*.r=1 is read by train.py
+    "no_divergent":   ["--disagreement-type", "constant"],
+}
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ablations", nargs="+", default=ABLATIONS)
@@ -42,6 +52,9 @@ def main():
                 "--seed", str(seed),
                 "--device", args.device,
             ]
+            # Append ablation-specific CLI flags (C-17)
+            cmd.extend(ABLATION_FLAGS.get(ablation, []))
+
             print(f"  Ablation={ablation} seed={seed}: {' '.join(cmd)}")
             if not args.dry_run:
                 subprocess.run(cmd)

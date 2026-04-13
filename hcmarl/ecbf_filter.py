@@ -85,6 +85,7 @@ class ECBFDiagnostics:
     C_upper_cbf: float    # Upper bound from resting CBF (Eq 23)
     qp_status: str        # CVXPY solver status
     was_clipped: bool     # Whether C_nominal was modified
+    infeasible: bool = False  # S-3: True when QP infeasible (mandatory rest)
 
 
 class ECBFFilter:
@@ -322,6 +323,7 @@ class ECBFFilter:
                 C_upper_cbf=C_ub_cbf,
                 qp_status="solver_error_fallback",
                 was_clipped=(abs(C_safe - C_nominal) > 1e-9),
+                infeasible=(C_ub_ecbf < 0.0 and C_ub_cbf < 0.0),
             )
             return C_safe, diag
 
@@ -330,13 +332,19 @@ class ECBFFilter:
             # Final safety clamp (numerical noise)
             C_filtered = max(0.0, C_filtered)
             qp_status = problem.status
+            qp_infeasible = False
         else:
             # Infeasible or unbounded: force rest (Remark 5.13)
             C_filtered = 0.0
             qp_status = problem.status
+            qp_infeasible = True
 
         was_clipped = abs(C_filtered - C_nominal) > 1e-9
 
+        # S-3: infeasible flag tracks mandatory rest separately from
+        # was_clipped, which only compares C_nominal to C_filtered.
+        # When C_nominal==0 and QP is infeasible, was_clipped=False
+        # but infeasible=True — mandatory rest is still logged.
         diag = ECBFDiagnostics(
             C_nominal=C_nominal,
             C_filtered=C_filtered,
@@ -349,6 +357,7 @@ class ECBFFilter:
             C_upper_cbf=C_ub_cbf,
             qp_status=qp_status,
             was_clipped=was_clipped,
+            infeasible=qp_infeasible,
         )
 
         return C_filtered, diag
@@ -362,12 +371,17 @@ class ECBFFilter:
         state: ThreeCCrState,
         C_nominal: float,
         target_load: float,
-    ) -> float:
+    ) -> tuple[float, bool]:
         """Compute safe neural drive using analytical bounds only.
 
         Applies both upper bounds (Eqs 19, 23) and the non-negativity
         constraint without solving a QP. Equivalent to the QP solution
         when C_nominal is scalar (1-D QP).
+
+        S-2: Returns an infeasibility flag to distinguish mandatory rest
+        (both upper bounds < 0, no feasible C > 0) from voluntary rest
+        (C_nominal was already 0). This enables paper-quality diagnostics
+        when using filter_analytical in the env hot loop for speed.
 
         Args:
             state: Current state.
@@ -375,7 +389,8 @@ class ECBFFilter:
             target_load: TL(t).
 
         Returns:
-            Safe neural drive C*.
+            Tuple of (C_safe, infeasible). infeasible=True when both
+            ECBF and CBF upper bounds are negative (no feasible C > 0).
         """
         MA, MF = state.MA, state.MF
         R_eff = self.muscle.R if target_load > 0.0 else self.muscle.Rr
@@ -383,9 +398,13 @@ class ECBFFilter:
         ub_ecbf = self.ecbf_upper_bound(MA, MF, R_eff)
         ub_cbf = self.cbf_upper_bound(MA, MF, R_eff)
 
+        # S-2: Detect infeasibility — both bounds negative means
+        # no positive C satisfies the safety constraints.
+        infeasible = (ub_ecbf < 0.0) and (ub_cbf < 0.0)
+
         C_safe = min(C_nominal, ub_ecbf, ub_cbf)
         C_safe = max(0.0, C_safe)
-        return C_safe
+        return C_safe, infeasible
 
     # -----------------------------------------------------------------
     # Rest-phase analysis (Section 5.4)

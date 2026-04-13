@@ -14,7 +14,7 @@ environment:
     knee:     {F: 0.0150, R: 0.00175, r: 15}
     elbow:    {F: 0.00912, R: 0.00094, r: 15}
     trunk:    {F: 0.00657, R: 0.00354, r: 15}
-    grip:     {F: 0.00794, R: 0.00109, r: 15}  # Looft et al. (2018), corrected from r=30
+    grip:     {F: 0.00794, R: 0.00109, r: 30}  # Looft et al. (2018) Table 2: r=30 for hand grip
 
   theta_max:
     shoulder: 0.70   # > theta_min_max 62.7% (Eq 26)
@@ -61,7 +61,7 @@ ecbf:
   alpha1: 0.5
   alpha2: 0.5
   alpha3: 0.5
-  kp: 10.0
+  kp: 1.0
 
 logging:
   use_wandb: true

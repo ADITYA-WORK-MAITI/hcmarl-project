@@ -1,0 +1,298 @@
+"""
+Tests for Cycle S-3 audit fixes (S-7, S-8, S-11, S-17, S-18).
+
+Verifies:
+    S-7   -- pipeline.py from_config uses additive 10pp margin for theta_max default
+    S-8   -- fatigue_for_allocation uses max(MF), documented as design choice
+    S-11  -- MMICRL E-step guard documented as standard EM practice
+    S-17  -- grip theta_max default raised from 0.25 to 0.35 in pettingzoo_wrapper
+    S-18  -- ankle/trunk ECBF inactivity documented as biologically justified
+"""
+import inspect
+import os
+import sys
+import warnings
+
+import numpy as np
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+# =====================================================================
+# S-7: pipeline.py from_config additive theta_max margin
+# =====================================================================
+
+class TestS7:
+
+    def test_additive_margin_formula(self):
+        """from_config default theta_max must use theta_min_max + 0.10, not * 1.1."""
+        src_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "hcmarl", "pipeline.py"
+        )
+        with open(src_path) as f:
+            source = f.read()
+        # Must NOT have the old multiplicative formula
+        assert "theta_min_max * 1.1" not in source, \
+            "Old multiplicative theta_max formula still present in pipeline.py"
+        # Must have the new additive formula
+        assert "theta_min_max + 0.10" in source, \
+            "New additive theta_max formula not found in pipeline.py"
+
+    def test_shoulder_margin_at_least_10pp(self):
+        """Shoulder default theta_max must have >= 10pp margin above theta_min_max."""
+        from hcmarl.three_cc_r import get_muscle
+        mp = get_muscle("shoulder")
+        default_theta = min(mp.theta_min_max + 0.10, 0.95)
+        margin = default_theta - mp.theta_min_max
+        assert margin >= 0.099, f"Shoulder margin {margin:.3f} < 10pp"
+
+    def test_grip_margin_at_least_10pp(self):
+        """Grip default theta_max must have >= 10pp margin above theta_min_max."""
+        from hcmarl.three_cc_r import get_muscle
+        mp = get_muscle("grip")
+        default_theta = min(mp.theta_min_max + 0.10, 0.95)
+        margin = default_theta - mp.theta_min_max
+        assert margin >= 0.099, f"Grip margin {margin:.3f} < 10pp"
+
+    def test_warning_on_missing_theta_max(self):
+        """from_config must warn when theta_max is not in config."""
+        from hcmarl.pipeline import HCMARLPipeline
+        import tempfile, yaml
+        # Minimal config with no ecbf theta_max
+        cfg = {
+            "num_workers": 2,
+            "muscle_names": ["shoulder"],
+            "dt": 1.0,
+            "tasks": [{"name": "test_task", "demands": {"shoulder": 0.3}}],
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(cfg, f)
+            tmp_path = f.name
+        try:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                pipeline = HCMARLPipeline.from_config(tmp_path)
+                theta_warnings = [x for x in w if "theta_max" in str(x.message)]
+                assert len(theta_warnings) >= 1, \
+                    "No warning raised for missing theta_max in config"
+        finally:
+            os.unlink(tmp_path)
+
+    def test_alpha_defaults_aligned_to_0_5(self):
+        """from_config alpha defaults must be 0.5, matching S-25 config alignment."""
+        from hcmarl.pipeline import HCMARLPipeline
+        import tempfile, yaml
+        cfg = {
+            "num_workers": 2,
+            "muscle_names": ["shoulder"],
+            "dt": 1.0,
+            "tasks": [{"name": "t", "demands": {"shoulder": 0.3}}],
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(cfg, f)
+            tmp_path = f.name
+        try:
+            with warnings.catch_warnings(record=True):
+                warnings.simplefilter("always")
+                pipeline = HCMARLPipeline.from_config(tmp_path)
+            # Check the ECBF params via the ecbf_filters
+            for m, ecbf_filter in pipeline.ecbf_filters.items():
+                p = ecbf_filter.params
+                assert p.alpha1 == 0.5, f"{m} alpha1={p.alpha1}, expected 0.5"
+                assert p.alpha2 == 0.5, f"{m} alpha2={p.alpha2}, expected 0.5"
+                assert p.alpha3 == 0.5, f"{m} alpha3={p.alpha3}, expected 0.5"
+        finally:
+            os.unlink(tmp_path)
+
+
+# =====================================================================
+# S-8: max(MF) aggregation documented in pipeline.py
+# =====================================================================
+
+class TestS8:
+
+    def test_fatigue_for_allocation_uses_max(self):
+        """fatigue_for_allocation must return max(MF) across muscles."""
+        from hcmarl.pipeline import WorkerState
+        from hcmarl.three_cc_r import ThreeCCrState
+        ws = WorkerState(
+            worker_id=0,
+            muscle_states={
+                "shoulder": ThreeCCrState(MR=0.5, MA=0.1, MF=0.4),
+                "elbow": ThreeCCrState(MR=0.8, MA=0.1, MF=0.1),
+                "grip": ThreeCCrState(MR=0.7, MA=0.1, MF=0.2),
+            }
+        )
+        assert ws.fatigue_for_allocation() == 0.4, \
+            "fatigue_for_allocation should return max(MF)=0.4"
+
+    def test_s8_documented_in_source(self):
+        """S-8 design choice must be documented in fatigue_for_allocation docstring."""
+        from hcmarl.pipeline import WorkerState
+        doc = WorkerState.fatigue_for_allocation.__doc__
+        assert "S-8" in doc, "S-8 tag missing from fatigue_for_allocation docstring"
+        assert "bottleneck" in doc.lower() or "conservative" in doc.lower(), \
+            "Justification (bottleneck/conservative) missing from docstring"
+
+    def test_consistent_with_reward_functions(self):
+        """pipeline max(MF) must be consistent with reward_functions max(MF)."""
+        from hcmarl.envs.reward_functions import nswf_reward, disagreement_utility
+        from hcmarl.pipeline import WorkerState
+        from hcmarl.three_cc_r import ThreeCCrState
+        # Same worker state
+        fatigue = {"shoulder": 0.4, "elbow": 0.1}
+        ws = WorkerState(
+            worker_id=0,
+            muscle_states={
+                "shoulder": ThreeCCrState(MR=0.5, MA=0.1, MF=0.4),
+                "elbow": ThreeCCrState(MR=0.8, MA=0.1, MF=0.1),
+            }
+        )
+        # Both should use max(MF)=0.4
+        pipeline_mf = ws.fatigue_for_allocation()
+        reward_di = disagreement_utility(max(fatigue.values()))
+        pipeline_di = disagreement_utility(pipeline_mf)
+        assert abs(reward_di - pipeline_di) < 1e-10, \
+            "Pipeline and reward_functions disagree on fatigue aggregation"
+
+
+# =====================================================================
+# S-11: E-step guard documented as standard EM practice
+# =====================================================================
+
+class TestS11:
+
+    def test_s11_comment_present(self):
+        """S-11 documentation must exist in mmicrl.py _discover_types_cfde."""
+        from hcmarl.mmicrl import MMICRL
+        src = inspect.getsource(MMICRL._discover_types_cfde)
+        assert "S-11" in src, "S-11 tag missing from _discover_types_cfde"
+
+    def test_mcLachlan_reference(self):
+        """The EM regularization must reference McLachlan & Peel."""
+        from hcmarl.mmicrl import MMICRL
+        src = inspect.getsource(MMICRL._discover_types_cfde)
+        assert "McLachlan" in src, \
+            "McLachlan & Peel reference missing from S-11 documentation"
+
+    def test_min_count_guard_exists(self):
+        """The 5% minimum count guard must exist in E-step."""
+        from hcmarl.mmicrl import MMICRL
+        src = inspect.getsource(MMICRL._discover_types_cfde)
+        assert "min_count" in src, "min_count guard not found in E-step code"
+        assert "0.05" in src, "5% threshold not found in E-step code"
+
+    def test_n_types_is_hyperparameter_documented(self):
+        """Documentation must state K (n_types) is a hyperparameter."""
+        from hcmarl.mmicrl import MMICRL
+        src = inspect.getsource(MMICRL._discover_types_cfde)
+        assert "hyperparameter" in src.lower(), \
+            "n_types as hyperparameter not documented"
+
+
+# =====================================================================
+# S-17: grip theta_max raised from 0.25 to 0.35
+# =====================================================================
+
+class TestS17:
+
+    def test_pettingzoo_grip_default(self):
+        """PettingZoo env must default grip theta_max to 0.35, not 0.25."""
+        from hcmarl.envs.pettingzoo_wrapper import WarehousePettingZoo
+        env = WarehousePettingZoo(n_workers=2, max_steps=5)
+        # Check the default theta
+        grip_theta = env.theta_max.get("grip")
+        assert grip_theta == 0.35, \
+            f"grip theta_max default is {grip_theta}, expected 0.35"
+
+    def test_grip_margin_sufficient(self):
+        """Grip margin (theta_max - theta_min_max) must be >= 10pp."""
+        from hcmarl.envs.pettingzoo_wrapper import WarehousePettingZoo
+        from hcmarl.three_cc_r import get_muscle
+        env = WarehousePettingZoo(n_workers=2, max_steps=5)
+        grip_theta = env.theta_max.get("grip")
+        grip_min = get_muscle("grip").theta_min_max
+        margin = grip_theta - grip_min
+        assert margin >= 0.10, \
+            f"Grip margin {margin:.3f} too small (theta_max={grip_theta}, theta_min_max={grip_min:.3f})"
+
+    def test_no_025_grip_default(self):
+        """The old 0.25 grip default must not appear in pettingzoo_wrapper.py."""
+        src_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "hcmarl", "envs", "pettingzoo_wrapper.py"
+        )
+        with open(src_path) as f:
+            source = f.read()
+        # Should not have grip: 0.25 in the default_theta dict
+        assert '"grip": 0.25' not in source, \
+            "Old grip default 0.25 still present in pettingzoo_wrapper.py"
+
+    def test_consistent_with_warehouse_env(self):
+        """Grip default must match warehouse_env.py."""
+        from hcmarl.envs.pettingzoo_wrapper import WarehousePettingZoo
+        pz_env = WarehousePettingZoo(n_workers=2, max_steps=5)
+        # warehouse_env uses 0.35 for grip
+        assert pz_env.theta_max["grip"] == 0.35
+
+
+# =====================================================================
+# S-18: ankle/trunk ECBF inactivity documented as biologically justified
+# =====================================================================
+
+class TestS18:
+
+    def test_s18_comment_present(self):
+        """S-18 documentation must exist in pettingzoo_wrapper.py."""
+        src_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "hcmarl", "envs", "pettingzoo_wrapper.py"
+        )
+        with open(src_path) as f:
+            source = f.read()
+        assert "S-18" in source, "S-18 tag missing from pettingzoo_wrapper.py"
+
+    def test_ankle_rr_over_f_documented(self):
+        """Documentation must mention ankle's high Rr/F ratio."""
+        src_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "hcmarl", "envs", "pettingzoo_wrapper.py"
+        )
+        with open(src_path) as f:
+            source = f.read()
+        assert "46.35" in source or "46.3" in source, \
+            "Ankle Rr/F ratio not documented in pettingzoo_wrapper.py"
+
+    def test_ankle_ecbf_rarely_binds(self):
+        """Ankle ECBF should not bind during normal task execution (light_sort)."""
+        from hcmarl.envs.pettingzoo_wrapper import WarehousePettingZoo
+        env = WarehousePettingZoo(n_workers=1, max_steps=60, ecbf_mode="on")
+        env.reset()
+        total_ankle_interventions = 0
+        for _ in range(60):
+            # light_sort = low demand task
+            _, _, _, _, infos = env.step({"worker_0": 1})  # light_sort
+            total_ankle_interventions += infos["worker_0"]["ecbf_interventions"]
+        # With ankle theta_max=0.80 and low demand, ECBF should rarely/never bind
+        # We check ankle MF stays far below threshold
+        ankle_mf = env.states[0]["ankle"]["MF"]
+        ankle_theta = env.theta_max_per_worker[0]["ankle"]
+        assert ankle_mf < ankle_theta * 0.5, \
+            f"Ankle MF={ankle_mf:.3f} unexpectedly close to theta_max={ankle_theta}"
+
+    def test_shoulder_is_primary_ecbf_target(self):
+        """Shoulder (Rr/F < 1) should be the primary ECBF target."""
+        from hcmarl.three_cc_r import get_muscle
+        shoulder = get_muscle("shoulder")
+        ankle = get_muscle("ankle")
+        trunk = get_muscle("trunk")
+        # Shoulder has Rr/F < 1: fatigue overshoot during rest
+        assert shoulder.Rr_over_F < 1.0, \
+            f"Shoulder Rr/F={shoulder.Rr_over_F:.3f} should be < 1"
+        # Ankle and trunk have Rr/F >> 1: self-limiting
+        assert ankle.Rr_over_F > 10.0, \
+            f"Ankle Rr/F={ankle.Rr_over_F:.3f} should be >> 1"
+        assert trunk.Rr_over_F > 5.0, \
+            f"Trunk Rr/F={trunk.Rr_over_F:.3f} should be >> 1"

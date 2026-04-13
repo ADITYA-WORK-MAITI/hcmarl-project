@@ -8,7 +8,7 @@ Usage:
     python scripts/train.py --config config/hcmarl_full_config.yaml --seed 0
     python scripts/train.py --config config/mappo_config.yaml --seed 0 --method mappo
     python scripts/train.py --config config/hcmarl_full_config.yaml --seed 0 --device cuda
-    python scripts/train.py --config config/hcmarl_full_config.yaml --seed 0 --mmicrl --pamap2-path /path/to/PAMAP2/Protocol
+    python scripts/train.py --config config/hcmarl_full_config.yaml --seed 0 --mmicrl
 """
 
 import argparse
@@ -27,8 +27,7 @@ from hcmarl.agents.mappo import MAPPO
 from hcmarl.agents.mappo_lag import MAPPOLagrangian
 from hcmarl.agents.ippo import IPPO
 from hcmarl.agents.hcmarl_agent import HCMARLAgent
-from hcmarl.baselines.omnisafe_wrapper import OmniSafeWrapper
-from hcmarl.baselines.safepo_wrapper import SafePOWrapper
+from hcmarl.nswf_allocator import NSWFParams, create_allocator
 from hcmarl.logger import HCMARLLogger
 
 
@@ -41,13 +40,11 @@ METHODS = {
     "mappo": "MAPPO (no safety filter)",
     "ippo": "IPPO (independent, no centralised critic)",
     "mappo_lag": "MAPPO-Lagrangian (cost critic + dual variable)",
-    "ppo_lag": "PPO-Lagrangian (OmniSafe)",
-    "cpo": "CPO (OmniSafe)",
-    "macpo": "MACPO (SafePO)",
 }
 
 
-def create_agent(method, obs_dim, global_obs_dim, n_actions, n_agents, cfg, device):
+def create_agent(method, obs_dim, global_obs_dim, n_actions, n_agents, cfg, device,
+                  action_mode="discrete", n_muscles=None, use_nswf=True):
     """Instantiate the correct agent class based on method name."""
     algo = cfg.get("algorithm", {})
     lr_actor = algo.get("lr_actor", 3e-4)
@@ -62,11 +59,24 @@ def create_agent(method, obs_dim, global_obs_dim, n_actions, n_agents, cfg, devi
     hidden_dim = algo.get("hidden_dim", 64)
 
     if method == "hcmarl":
+        welfare_type = cfg.get("welfare_type", "nswf")
+        allocation_interval = cfg.get("allocation_interval", 30)
+        nswf_cfg = cfg.get("nswf", {})
+        nswf_params = NSWFParams(
+            kappa=nswf_cfg.get("kappa", 1.0),
+            epsilon=nswf_cfg.get("epsilon", 1e-3),
+        )
         return HCMARLAgent(
             obs_dim=obs_dim, global_obs_dim=global_obs_dim,
             n_actions=n_actions, n_agents=n_agents,
             theta_max=cfg.get("environment", {}).get("theta_max", {}),
             ecbf_params=cfg.get("ecbf", {}),
+            use_nswf=use_nswf,
+            action_mode=action_mode,
+            n_muscles=n_muscles,
+            welfare_type=welfare_type,
+            nswf_params=nswf_params,
+            allocation_interval=allocation_interval,
             device=device,
         )
     elif method == "mappo":
@@ -99,11 +109,6 @@ def create_agent(method, obs_dim, global_obs_dim, n_actions, n_agents, cfg, devi
             lambda_init=algo.get("lambda_init", 0.5),
             device=device,
         )
-    elif method in ("ppo_lag", "cpo"):
-        algo_name = "PPOLag" if method == "ppo_lag" else "CPO"
-        return OmniSafeWrapper(algo_name, obs_dim, n_actions, cfg, device)
-    elif method == "macpo":
-        return SafePOWrapper(obs_dim, n_actions, n_agents, cfg, device)
     else:
         raise ValueError(f"Unknown method: {method}")
 
@@ -112,56 +117,72 @@ def create_agent(method, obs_dim, global_obs_dim, n_actions, n_agents, cfg, devi
 # MMICRL pre-training
 # ---------------------------------------------------------------------------
 
-def run_mmicrl_pretrain(cfg, pamap2_path=None, log_dir="logs"):
+def run_mmicrl_pretrain(cfg, log_dir="logs"):
     """
-    Run MMICRL type discovery from real PAMAP2 data.
-    Returns learned per-type theta_max thresholds.
+    Run MMICRL type discovery from Path G (WSD4FEDSRM calibrated demos).
+
+    Demo source priority (per Remark 7.2 of math doc):
+      1. WSD4FEDSRM raw data available -> full calibration pipeline
+      2. Pre-computed profiles in config/pathg_profiles.json -> generate demos
+      3. Neither -> skip MMICRL with warning (no random-policy fallback)
     """
-    from hcmarl.mmicrl import DemonstrationCollector, MMICRL
+    from hcmarl.mmicrl import MMICRL
+    from hcmarl.real_data_calibration import (
+        generate_demonstrations_from_profiles,
+        load_path_g_into_collector,
+    )
 
     mmicrl_cfg = cfg.get("mmicrl", {})
     n_types = mmicrl_cfg.get("n_types", 3)
-    n_muscles = mmicrl_cfg.get("n_muscles", 3)
 
-    collector = DemonstrationCollector(n_muscles=n_muscles)
+    # --- Source 1: full Path G from raw WSD4FEDSRM data ---
+    data_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data", "wsd4fedsrm", "WSD4FEDSRM",
+    )
+    profiles_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "config", "pathg_profiles.json",
+    )
 
-    if pamap2_path:
-        print(f"Loading PAMAP2 real data from: {pamap2_path}")
-        n_loaded = collector.load_real_demos(
-            source="pamap2",
-            path=pamap2_path,
-            window_size=mmicrl_cfg.get("window_size", 256),
-            stride=mmicrl_cfg.get("stride", 128),
-        )
-        print(f"  Loaded {n_loaded} trajectory windows from PAMAP2")
+    worker_profiles = None
+
+    if os.path.isdir(data_dir):
+        print("Path G: calibrating from WSD4FEDSRM raw data...")
+        from hcmarl.real_data_calibration import run_path_g
+        path_g_result = run_path_g(data_dir)
+        worker_profiles = path_g_result['worker_profiles']
+    elif os.path.exists(profiles_path):
+        print(f"Path G: loading pre-computed profiles from {profiles_path}")
+        with open(profiles_path) as f:
+            profiles_data = json.load(f)
+        worker_profiles = profiles_data['profiles']
     else:
-        # No real data path provided — collect from env with random policy
-        print("No PAMAP2 path provided. Collecting demos from env with random policy...")
-        from hcmarl.envs.pettingzoo_wrapper import WarehousePettingZoo
-        env_cfg = cfg.get("environment", {})
-        env = WarehousePettingZoo(
-            n_workers=env_cfg.get("n_workers", 6),
-            max_steps=env_cfg.get("max_steps", 480),
-        )
+        print("WARNING: No WSD4FEDSRM data and no pre-computed profiles found.")
+        print("  MMICRL requires real-data demonstrations (Remark 7.2).")
+        print("  Skipping MMICRL pre-training.")
+        return None, None
 
-        class RandomPolicy:
-            def __init__(self, n_tasks):
-                self.n_tasks = n_tasks
-            def get_actions(self, obs):
-                return {agent_id: np.random.randint(0, self.n_tasks) for agent_id in obs}
+    # Generate demonstrations from calibrated profiles (Eq 35 controller)
+    print("Generating demonstrations from calibrated profiles (Eq 35 controller)...")
+    demos, worker_ids = generate_demonstrations_from_profiles(
+        worker_profiles,
+        muscle='shoulder',
+        n_episodes_per_worker=mmicrl_cfg.get("n_episodes_per_worker", 3),
+    )
+    print(f"  Generated {len(demos)} demonstrations from {len(set(worker_ids))} workers")
 
-        n_loaded = collector.collect_from_env(
-            env, RandomPolicy(env.n_tasks),
-            n_episodes=mmicrl_cfg.get("n_collection_episodes", 50),
-        )
-        print(f"  Collected {n_loaded} episodes from environment")
+    # Load into MMICRL collector
+    collector = load_path_g_into_collector(demos, worker_ids)
 
-    # Fit MMICRL
+    # Fit MMICRL (single-muscle shoulder calibration -> n_muscles=1)
     mmicrl = MMICRL(
         n_types=n_types,
         lambda1=mmicrl_cfg.get("lambda1", 1.0),
         lambda2=mmicrl_cfg.get("lambda2", 1.0),
-        n_muscles=n_muscles,
+        n_muscles=1,
+        n_iterations=mmicrl_cfg.get("n_iterations", 150),
+        hidden_dims=mmicrl_cfg.get("hidden_dims", [64, 64]),
     )
     results = mmicrl.fit(collector)
 
@@ -191,7 +212,7 @@ def run_mmicrl_pretrain(cfg, pamap2_path=None, log_dir="logs"):
 # ---------------------------------------------------------------------------
 
 def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmicrl_model=None,
-          ecbf_mode="on"):
+          ecbf_mode="on", use_nswf=True, disagreement_type="divergent"):
     """Full training loop with logging and checkpointing."""
     # Setup
     torch.manual_seed(seed)
@@ -247,17 +268,41 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)
 
+    # Action mode: continuous for hcmarl method (math-doc-faithful, Remark 7.2)
+    action_mode = cfg.get("action_mode", "discrete")
+    if method == "hcmarl" and action_mode == "continuous":
+        env_action_mode = "continuous"
+    else:
+        env_action_mode = "discrete"
+
+    # Build muscle_params_override from config (C-17: no_reperfusion ablation)
+    muscle_params_override = None
+    muscle_groups_cfg = env_cfg.get("muscle_groups")
+    if muscle_groups_cfg:
+        muscle_params_override = {}
+        for m_name, m_params in muscle_groups_cfg.items():
+            muscle_params_override[m_name] = {
+                k: v for k, v in m_params.items() if k in ("F", "R", "r")
+            }
+
     # Environment
     env = WarehousePettingZoo(
         n_workers=n_workers, max_steps=max_steps,
         theta_max=theta_max, ecbf_mode=ecbf_mode,
+        action_mode=env_action_mode,
+        disagreement_type=disagreement_type,
+        muscle_params_override=muscle_params_override,
     )
     obs_dim = env.obs_dim
     global_obs_dim = env.global_obs_dim
     n_actions = env.n_tasks
+    n_muscles = env.n_muscles
 
     # Agent
-    agent = create_agent(method, obs_dim, global_obs_dim, n_actions, n_workers, cfg, device)
+    agent = create_agent(
+        method, obs_dim, global_obs_dim, n_actions, n_workers, cfg, device,
+        action_mode=env_action_mode, n_muscles=n_muscles, use_nswf=use_nswf,
+    )
 
     # Resume
     if resume_from and os.path.exists(resume_from):
@@ -282,10 +327,9 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
 
     # Detect agent type for buffer storage
     is_mappo_lag = isinstance(agent, MAPPOLagrangian)
-    is_safepo = isinstance(agent, SafePOWrapper)
-    is_lagrangian = is_mappo_lag or (is_safepo and hasattr(agent, 'buffer') and agent.buffer is not None)
+    is_lagrangian = is_mappo_lag
     is_ippo = isinstance(agent, IPPO)
-    is_hcmarl = hasattr(agent, 'mappo') and not is_safepo
+    is_hcmarl = hasattr(agent, 'mappo')
 
     # Training
     global_step = 0
@@ -317,6 +361,24 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
         for step in range(max_steps):
             global_state = env._get_global_obs()
 
+            # C-7.A: Hierarchical allocation — run NSWF allocator every K steps
+            if is_hcmarl and hasattr(agent, 'allocator') and agent.allocator is not None:
+                if step == 0 or agent.should_reallocate():
+                    # Gather per-worker fatigue for allocator
+                    fatigue_for_alloc = {}
+                    for agent_id in env.agents:
+                        idx = int(agent_id.split("_")[1])
+                        worker_fatigue = env.states.get(idx, {})
+                        max_mf = max(
+                            (worker_fatigue.get(m, {}).get("MF", 0.0)
+                             for m in env.muscle_names), default=0.0
+                        )
+                        fatigue_for_alloc[agent_id] = max_mf
+                    assignments = agent.allocate_tasks(fatigue_for_alloc)
+                    # Push assignments to env (for continuous mode conditioning)
+                    if hasattr(env, 'set_task_assignments'):
+                        env.set_task_assignments(assignments)
+
             # Get actions from agent
             result = agent.get_actions(obs, global_state) if not is_ippo else agent.get_actions(obs)
             if isinstance(result, tuple):
@@ -343,18 +405,18 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
                 step_violations += violations
                 if task != "rest":
                     tasks_per_worker[i] += 1
-                else:
-                    avg_mf = np.mean(list(fatigue.values())) if fatigue else 0
-                    if avg_mf > 0.3:
-                        forced_rests += 1
                 for m, mf in fatigue.items():
                     peak_mf = max(peak_mf, mf)
-                # ECBF intervention tracking for SAI
+                # ECBF intervention tracking (S-22: forced rest = ECBF clipped)
                 ecbf_int = info.get("ecbf_interventions", 0)
                 total_ecbf_interventions += ecbf_int
-                # Count muscles with nonzero demand as intervention opportunities
+                if ecbf_int > 0:
+                    forced_rests += 1
+                # S-23: count only muscles with nonzero task demand as ECBF
+                # opportunities (not all 6 muscles unconditionally)
                 if task != "rest":
-                    total_ecbf_opportunities += len(fatigue)
+                    demands = env.task_mgr.get_demand_vector(task)
+                    total_ecbf_opportunities += int((demands > 0).sum())
 
             episode_cost += step_violations
             if step_violations == 0:
@@ -526,9 +588,21 @@ def main():
     parser.add_argument("--device", type=str, default="auto", help="cpu, cuda, or auto")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
     parser.add_argument("--mmicrl", action="store_true", help="Run MMICRL pre-training before RL")
-    parser.add_argument("--pamap2-path", type=str, default=None, help="Path to PAMAP2 Protocol/ directory")
-    parser.add_argument("--ecbf-mode", type=str, default="on", choices=["on", "off"],
+    parser.add_argument("--ecbf-mode", type=str, default=None, choices=["on", "off"],
                         help="ECBF safety filter mode: 'on' (default) or 'off' (ablation)")
+    parser.add_argument("--action-mode", type=str, default="discrete",
+                        choices=["discrete", "continuous"],
+                        help="Action mode: 'discrete' (task selection) or 'continuous' (neural drive per Remark 7.2)")
+    parser.add_argument("--welfare", type=str, default="nswf",
+                        choices=["nswf", "utilitarian", "maxmin", "gini"],
+                        help="Welfare function for NSWF allocator ablation (C-7.R)")
+    parser.add_argument("--allocation-interval", type=int, default=30,
+                        help="Steps between NSWF allocator calls (K in hierarchical two-timescale, C-7.A)")
+    parser.add_argument("--no-nswf", action="store_true",
+                        help="Disable NSWF allocator (no_nswf ablation)")
+    parser.add_argument("--disagreement-type", type=str, default=None,
+                        choices=["divergent", "constant"],
+                        help="Disagreement utility type: 'divergent' (Eq 32) or 'constant' (D_i=kappa)")
     args = parser.parse_args()
 
     # Load config
@@ -542,14 +616,54 @@ def main():
         device = args.device
     print(f"Using device: {device}")
 
-    # MMICRL pre-training
+    # ---------------------------------------------------------------
+    # C-17: Read ablation flags from config AND CLI overrides
+    # ---------------------------------------------------------------
+
+    # ECBF mode: CLI > config > default "on"
+    ecbf_cfg = cfg.get("ecbf", {})
+    if args.ecbf_mode is not None:
+        ecbf_mode = args.ecbf_mode
+    elif not ecbf_cfg.get("enabled", True):
+        ecbf_mode = "off"
+    else:
+        ecbf_mode = "on"
+
+    # NSWF: CLI > config > default True
+    nswf_cfg = cfg.get("nswf", {})
+    if args.no_nswf:
+        use_nswf = False
+    elif not nswf_cfg.get("enabled", True):
+        use_nswf = False
+    else:
+        use_nswf = True
+
+    # Disagreement type: CLI > config > default "divergent"
+    disagree_cfg = cfg.get("disagreement", {})
+    if args.disagreement_type is not None:
+        disagreement_type = args.disagreement_type
+    else:
+        disagreement_type = disagree_cfg.get("type", "divergent")
+
+    # MMICRL: CLI --mmicrl > config mmicrl.enabled > default False
+    mmicrl_cfg = cfg.get("mmicrl", {})
+    run_mmicrl = args.mmicrl or mmicrl_cfg.get("enabled", False)
+    # But if use_fixed_theta is True, skip MMICRL even if enabled
+    if mmicrl_cfg.get("use_fixed_theta", False):
+        run_mmicrl = False
+
     mmicrl_results = None
     mmicrl_model = None
-    if args.mmicrl:
-        mmicrl_results, mmicrl_model = run_mmicrl_pretrain(cfg, args.pamap2_path)
+    if run_mmicrl:
+        mmicrl_results, mmicrl_model = run_mmicrl_pretrain(cfg)
+
+    # Inject CLI overrides into config
+    cfg["action_mode"] = args.action_mode
+    cfg["welfare_type"] = args.welfare
+    cfg["allocation_interval"] = args.allocation_interval
 
     train(cfg, args.method, args.seed, device, args.resume, mmicrl_results, mmicrl_model,
-          ecbf_mode=args.ecbf_mode)
+          ecbf_mode=ecbf_mode, use_nswf=use_nswf, disagreement_type=disagreement_type)
 
 
 if __name__ == "__main__":

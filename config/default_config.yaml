@@ -21,7 +21,7 @@ muscle_names:
 
 # -- Simulation parameters --
 dt: 1.0        # Integration time step [minutes]
-kp: 10.0       # Baseline neural drive gain (Eq 35)
+kp: 1.0        # Baseline neural drive gain (Eq 35)
 
 # -- Productive tasks (Def 7.1) --
 # Each task specifies target loads (fraction of MVC) per muscle group.
@@ -61,21 +61,21 @@ tasks:
 ecbf:
   shoulder:
     theta_max: 0.70    # Above 62.7% threshold (Eq 26)
-    alpha1: 0.05       # ECBF gain (class-K, Eq 16)
-    alpha2: 0.05       # ECBF gain (class-K, Eq 17)
-    alpha3: 0.10       # Resting-floor CBF gain (Eq 23)
+    alpha1: 0.5        # ECBF gain (class-K, Eq 16)
+    alpha2: 0.5        # ECBF gain (class-K, Eq 17)
+    alpha3: 0.5        # Resting-floor CBF gain (Eq 23)
 
   elbow:
     theta_max: 0.45    # Above 39.3% threshold (Eq 26)
-    alpha1: 0.05
-    alpha2: 0.05
-    alpha3: 0.10
+    alpha1: 0.5
+    alpha2: 0.5
+    alpha3: 0.5
 
   grip:
     theta_max: 0.35    # Above 32.7% threshold (Eq 26) — raised from 0.25
-    alpha1: 0.05
-    alpha2: 0.05
-    alpha3: 0.10
+    alpha1: 0.5
+    alpha2: 0.5
+    alpha3: 0.5
 
 # -- NSWF Allocator Parameters (Section 6) --
 nswf:

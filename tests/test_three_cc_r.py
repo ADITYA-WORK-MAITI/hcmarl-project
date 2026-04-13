@@ -184,7 +184,7 @@ class TestThreeCCrODE:
     """Test the ODE right-hand side and related methods."""
 
     def setup_method(self):
-        self.model = ThreeCCr(params=SHOULDER, kp=10.0)
+        self.model = ThreeCCr(params=SHOULDER, kp=1.0)
 
     # -- Reperfusion switch (Eq 5) --
 
@@ -205,7 +205,7 @@ class TestThreeCCrODE:
     def test_baseline_drive_tracking(self):
         """C = kp * (TL - MA) when TL > MA (Eq 35)."""
         C = self.model.baseline_neural_drive(0.3, 0.1)
-        assert abs(C - 10.0 * (0.3 - 0.1)) < 1e-10
+        assert abs(C - 1.0 * (0.3 - 0.1)) < 1e-10
 
     def test_baseline_drive_non_negative(self):
         """C = kp * max(TL - MA, 0) -- non-negative (Eq 35)."""
@@ -311,6 +311,56 @@ class TestEulerStep:
         s = ThreeCCrState(MR=0.5, MA=0.0, MF=0.5)
         s_new = model.step_euler(s, C=0.0, target_load=0.0, dt=1.0)
         assert s_new.MF < s.MF
+
+    def test_euler_vs_rk45_high_C(self):
+        """C-14 regression: kp=1 keeps Euler stable; kp=10 caused 26x overshoot.
+
+        With kp=10, dt=1 min, a fresh worker on heavy_lift gets
+        C=10*(0.45-0)=4.5, so MA overshoots to 4.5 — physically impossible.
+        With kp=1, C=0.45 and MA stays in [0,1].
+
+        We do NOT assert small Euler-vs-RK45 error: Euler at dt=1 min is a
+        coarse first-order approximation (59% relative error on MA is expected).
+        The property that matters is *stability*, not accuracy.
+        """
+        model = ThreeCCr(params=SHOULDER, kp=1.0)
+        s0 = ThreeCCrState.fresh()
+        TL = 0.45  # heavy_lift shoulder demand
+
+        # Euler step at dt=1 with kp=1 — must stay bounded and physical
+        C = model.baseline_neural_drive(TL, s0.MA)
+        s_euler = model.step_euler(s0, C=C, target_load=TL, dt=1.0)
+
+        # Stability: all components in [0, 1]
+        assert 0.0 <= s_euler.MR <= 1.0
+        assert 0.0 <= s_euler.MA <= 1.0
+        assert 0.0 <= s_euler.MF <= 1.0
+
+        # Conservation must hold exactly
+        assert abs(s_euler.MR + s_euler.MA + s_euler.MF - 1.0) < 1e-10
+
+        # Regression: kp=10 would give MA = 10*(0.45-0)*1 = 4.5
+        model_old = ThreeCCr(params=SHOULDER, kp=10.0)
+        C_old = model_old.baseline_neural_drive(TL, s0.MA)
+        assert C_old * 1.0 > 1.0, "kp=10 drive should overshoot"
+        # But kp=1 stays safe
+        assert C * 1.0 <= 1.0, "kp=1 drive should stay bounded"
+
+    def test_euler_non_negative_all_muscles(self):
+        """Euler step must produce non-negative state for all 6 muscle groups.
+
+        Tests the worst-case scenario: fresh worker, highest task demand,
+        kp=1, dt=1. No component should go negative.
+        """
+        for muscle in ALL_MUSCLES:
+            model = ThreeCCr(params=muscle, kp=1.0)
+            s = ThreeCCrState.fresh()
+            C = model.baseline_neural_drive(0.55, 0.0)  # worst-case TL
+            s_new = model.step_euler(s, C=C, target_load=0.55, dt=1.0)
+            assert s_new.MR >= 0.0, f"{muscle.name}: MR={s_new.MR}"
+            assert s_new.MA >= 0.0, f"{muscle.name}: MA={s_new.MA}"
+            assert s_new.MF >= 0.0, f"{muscle.name}: MF={s_new.MF}"
+            assert abs(s_new.MR + s_new.MA + s_new.MF - 1.0) < 1e-10
 
 
 # =====================================================================

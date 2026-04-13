@@ -15,6 +15,8 @@ from typing import Dict, List, Optional, Tuple, Any
 import yaml
 import copy
 from hcmarl.envs.reward_functions import nswf_reward, safety_cost
+from hcmarl.ecbf_filter import ECBFFilter, ECBFParams
+from hcmarl.three_cc_r import ThreeCCrState, get_muscle as _get_muscle_params
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +77,15 @@ class SingleWorkerWarehouseEnv(gym.Env):
             "shoulder": 0.70, "elbow": 0.45, "grip": 0.35,  # grip: theta_min_max=19.5% with r=30 (Table 1)
         }
 
+        # C-6.A: Build per-muscle ECBFFilter instances
+        self.ecbf_filters = {}
+        for m in self.muscle_names:
+            mp = _get_muscle_params(m)
+            theta = self.theta_max.get(m, 0.7)
+            theta = max(theta, mp.theta_min_max + 0.01)
+            params = ECBFParams(theta_max=theta, alpha1=0.05, alpha2=0.05, alpha3=0.1)
+            self.ecbf_filters[m] = ECBFFilter(muscle=mp, ecbf_params=params)
+
         # Observation: [MR, MA, MF] per muscle + current_step_normalised
         obs_dim = self.n_muscles * 3 + 1
         self.observation_space = spaces.Box(
@@ -110,7 +121,7 @@ class SingleWorkerWarehouseEnv(gym.Env):
             the ECBF clipped the neural drive, and the total clipped magnitude.
         """
         task = self.tasks[task_name]
-        kp = 10.0  # proportional gain for baseline controller
+        kp = 1.0  # proportional gain for baseline controller (Eq 35)
         ecbf_interventions = 0
         ecbf_clip_total = 0.0
 
@@ -125,30 +136,16 @@ class SingleWorkerWarehouseEnv(gym.Env):
             MA = self.state[m]["MA"]
             MF = self.state[m]["MF"]
 
-            # Neural drive (proportional controller)
+            # Neural drive (proportional controller, Eq 35)
             C_nominal = kp * max(TL - MA, 0.0) if TL > 0 else 0.0
 
             R_eff = R_base if TL > 0 else R_base * r
 
             if self.ecbf_mode == "on":
-                # ECBF safety clipping (simplified analytical bound)
-                # Fatigue ceiling bound (Eq 19 simplified, match ecbf_filter.py defaults)
-                alpha1, alpha2 = 0.05, 0.05
-                h = self.theta_max[m] - MF
-                h_dot = -F * MA + R_eff * MF
-                psi1 = h_dot + alpha1 * h
-                ecbf_bound = (1.0 / F) * (
-                    F**2 * MA + R_eff * F * MA - R_eff**2 * MF
-                    + alpha1 * (-F * MA + R_eff * MF)
-                    + alpha2 * psi1
-                )
-                # Resting floor bound (Eq 23, match ecbf_filter.py defaults)
-                alpha3 = 0.1
-                cbf_bound = R_eff * MF + alpha3 * MR
-                C_max = min(ecbf_bound, cbf_bound)
-                C = max(0.0, min(C_nominal, C_max))
+                # C-6.A: Use canonical ECBFFilter instead of inlined bounds
+                state = ThreeCCrState(MR=MR, MA=MA, MF=MF)
+                C, _infeasible = self.ecbf_filters[m].filter_analytical(state, C_nominal, TL)
             else:
-                # ecbf_mode == "off": no safety filtering
                 C = max(0.0, C_nominal)
 
             # Track ECBF interventions
@@ -166,15 +163,16 @@ class SingleWorkerWarehouseEnv(gym.Env):
             MF_new = MF + dMF * self.dt
             MR_new = MR + dMR * self.dt
 
-            # Clamp to [0, 1] and renormalise for conservation
-            MA_new = max(0.0, min(1.0, MA_new))
-            MF_new = max(0.0, min(1.0, MF_new))
-            MR_new = max(0.0, min(1.0, MR_new))
-            total = MA_new + MF_new + MR_new
-            if total > 0:
-                MA_new /= total
-                MF_new /= total
-                MR_new /= total
+            # Conservation-preserving guard (no renormalization)
+            MA_new = max(0.0, MA_new)
+            MF_new = max(0.0, MF_new)
+            MR_new = 1.0 - MA_new - MF_new
+            if MR_new < 0.0:
+                s = MA_new + MF_new
+                if s > 0:
+                    MA_new /= s
+                    MF_new /= s
+                MR_new = 0.0
 
             self.state[m] = {"MR": MR_new, "MA": MA_new, "MF": MF_new}
 
@@ -278,6 +276,15 @@ class WarehouseMultiAgentEnv:
             "shoulder": 0.70, "elbow": 0.45, "grip": 0.35,  # grip: theta_min_max=19.5% with r=30 (Table 1)
         }
 
+        # C-6.A: Build per-muscle ECBFFilter instances (shared across workers)
+        self.ecbf_filters = {}
+        for m in self.muscle_names:
+            mp = _get_muscle_params(m)
+            theta = self.theta_max.get(m, 0.7)
+            theta = max(theta, mp.theta_min_max + 0.01)
+            params = ECBFParams(theta_max=theta, alpha1=0.05, alpha2=0.05, alpha3=0.1)
+            self.ecbf_filters[m] = ECBFFilter(muscle=mp, ecbf_params=params)
+
         # Agent IDs
         self.possible_agents = [f"worker_{i}" for i in range(n_workers)]
         self.agents = list(self.possible_agents)
@@ -335,7 +342,7 @@ class WarehouseMultiAgentEnv:
             the ECBF clipped the neural drive, and the total clipped magnitude.
         """
         task = self.tasks[task_name]
-        kp = 10.0
+        kp = 1.0  # proportional gain (Eq 35)
         ecbf_interventions = 0
         ecbf_clip_total = 0.0
 
@@ -353,20 +360,10 @@ class WarehouseMultiAgentEnv:
             R_eff = R_base if TL > 0 else R_base * r_mult
 
             if self.ecbf_mode == "on":
-                # ECBF analytical bound (match ecbf_filter.py defaults and proofs)
-                alpha1, alpha2, alpha3 = 0.05, 0.05, 0.1
-                h = self.theta_max[m] - MF
-                h_dot = -F * MA + R_eff * MF
-                psi1 = h_dot + alpha1 * h
-                ecbf_bound = (1.0 / F) * (
-                    F**2 * MA + R_eff * F * MA - R_eff**2 * MF
-                    + alpha1 * (-F * MA + R_eff * MF)
-                    + alpha2 * psi1
-                )
-                cbf_bound = R_eff * MF + alpha3 * MR
-                C = max(0.0, min(C_nominal, max(0.0, ecbf_bound), cbf_bound))
+                # C-6.A: Use canonical ECBFFilter instead of inlined bounds
+                state_obj = ThreeCCrState(MR=MR, MA=MA, MF=MF)
+                C, _infeasible = self.ecbf_filters[m].filter_analytical(state_obj, C_nominal, TL)
             else:
-                # ecbf_mode == "off": no safety filtering
                 C = max(0.0, C_nominal)
 
             # Track ECBF interventions
@@ -380,12 +377,13 @@ class WarehouseMultiAgentEnv:
 
             MA_new = max(0.0, MA + dMA * self.dt)
             MF_new = max(0.0, MF + dMF * self.dt)
-            MR_new = max(0.0, MR + dMR * self.dt)
-            total = MA_new + MF_new + MR_new
-            if total > 0:
-                MA_new /= total
-                MF_new /= total
-                MR_new /= total
+            MR_new = 1.0 - MA_new - MF_new
+            if MR_new < 0.0:
+                s = MA_new + MF_new
+                if s > 0:
+                    MA_new /= s
+                    MF_new /= s
+                MR_new = 0.0
 
             self.states[worker_idx][m] = {"MR": MR_new, "MA": MA_new, "MF": MF_new}
 

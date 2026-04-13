@@ -1,4 +1,4 @@
-"""Tests for Phase 2: Warehouse environment, MAPPO agent, baselines."""
+"""Tests for Phase 2: Warehouse environment, baselines."""
 
 import numpy as np
 import sys
@@ -8,7 +8,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hcmarl.warehouse_env import SingleWorkerWarehouseEnv, WarehouseMultiAgentEnv
-from hcmarl.mappo_agent import MAPPOAgent, MAPPOActorNumpy, MAPPOCriticNumpy, MAPPOBuffer
 from hcmarl.baselines import create_all_baselines
 
 
@@ -99,65 +98,6 @@ def test_multi_env_episode():
     print("  PASS: test_multi_env_episode")
 
 
-# ===========================================================================
-# MAPPO Agent Tests
-# ===========================================================================
-
-def test_actor_forward():
-    actor = MAPPOActorNumpy(obs_dim=10, n_actions=4)
-    obs = np.random.randn(10).astype(np.float32)
-    logits = actor.forward(obs)
-    assert logits.shape == (4,)
-    print("  PASS: test_actor_forward")
-
-def test_actor_get_action():
-    actor = MAPPOActorNumpy(obs_dim=10, n_actions=4)
-    obs = np.random.randn(10).astype(np.float32)
-    action, log_prob = actor.get_action(obs)
-    assert 0 <= action < 4
-    assert log_prob <= 0  # log probability is always <= 0
-    print("  PASS: test_actor_get_action")
-
-def test_actor_probs_sum_to_one():
-    actor = MAPPOActorNumpy(obs_dim=10, n_actions=4)
-    obs = np.random.randn(10).astype(np.float32)
-    probs = actor.get_probs(obs)
-    assert abs(probs.sum() - 1.0) < 1e-5, f"Probs sum to {probs.sum()}"
-    assert all(p > 0 for p in probs)
-    print("  PASS: test_actor_probs_sum_to_one")
-
-def test_critic_forward():
-    critic = MAPPOCriticNumpy(global_obs_dim=37)
-    obs = np.random.randn(37).astype(np.float32)
-    value = critic.forward(obs)
-    assert isinstance(value, float)
-    print("  PASS: test_critic_forward")
-
-def test_mappo_agent_get_actions():
-    agent = MAPPOAgent(n_agents=4, obs_dim=10, global_obs_dim=37, n_actions=4)
-    observations = {f"worker_{i}": np.random.randn(10).astype(np.float32) for i in range(4)}
-    global_state = np.random.randn(37).astype(np.float32)
-    actions, log_probs, values = agent.get_actions(observations, global_state)
-    assert len(actions) == 4
-    assert log_probs.shape == (4,)
-    assert values.shape == (4,)
-    print("  PASS: test_mappo_agent_get_actions")
-
-def test_buffer_store_and_gae():
-    buffer = MAPPOBuffer(n_agents=2, obs_dim=10, global_obs_dim=21, buffer_size=16)
-    for _ in range(10):
-        buffer.store(
-            obs=np.random.randn(2, 10).astype(np.float32),
-            global_state=np.random.randn(21).astype(np.float32),
-            actions=np.random.randint(0, 4, 2),
-            rewards=np.random.randn(2).astype(np.float32),
-            dones=np.zeros(2, dtype=np.float32),
-            log_probs=np.random.randn(2).astype(np.float32),
-            values=np.random.randn(2).astype(np.float32),
-        )
-    buffer.compute_gae(last_values=np.zeros(2))
-    assert buffer.ptr == 10
-    print("  PASS: test_buffer_store_and_gae")
 
 
 # ===========================================================================
@@ -209,27 +149,6 @@ def test_greedy_safe_rests_when_fatigued():
     print("  PASS: test_greedy_safe_rests_when_fatigued")
 
 
-# ===========================================================================
-# Integration: MAPPO + Environment
-# ===========================================================================
-
-def test_mappo_runs_in_env():
-    env = WarehouseMultiAgentEnv(n_workers=3, max_steps=10)
-    obs_dim = 3 * env.n_muscles + 1
-    global_obs_dim = 3 * env.n_muscles * 3 + 1
-    agent = MAPPOAgent(n_agents=3, obs_dim=obs_dim, global_obs_dim=global_obs_dim, n_actions=4)
-
-    obs, _ = env.reset()
-    total_reward = 0.0
-    for step in range(10):
-        global_state = env._get_global_obs()
-        actions, _, _ = agent.get_actions(obs, global_state)
-        obs, rewards, terms, truncs, infos = env.step(actions)
-        total_reward += sum(rewards.values())
-        if all(terms.values()):
-            break
-    assert isinstance(total_reward, float)
-    print("  PASS: test_mappo_runs_in_env")
 
 
 # ===========================================================================
@@ -238,7 +157,7 @@ def test_mappo_runs_in_env():
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("Phase 2 Tests: Warehouse Env + MAPPO + Baselines")
+    print("Phase 2 Tests: Warehouse Env + Baselines")
     print("=" * 50)
 
     tests = [
@@ -247,15 +166,9 @@ if __name__ == "__main__":
         test_single_env_conservation, test_single_env_rest_recovers,
         test_multi_env_reset, test_multi_env_step,
         test_multi_env_global_obs, test_multi_env_episode,
-        # MAPPO
-        test_actor_forward, test_actor_get_action,
-        test_actor_probs_sum_to_one, test_critic_forward,
-        test_mappo_agent_get_actions, test_buffer_store_and_gae,
         # Baselines
         test_all_baselines_return_actions, test_baseline_names_unique,
         test_fixed_schedule_alternates, test_greedy_safe_rests_when_fatigued,
-        # Integration
-        test_mappo_runs_in_env,
     ]
 
     passed = 0

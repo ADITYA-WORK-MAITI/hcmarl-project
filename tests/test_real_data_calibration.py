@@ -121,6 +121,7 @@ class TestPredictEnduranceTime:
     def test_conservation_law_during_simulation(self):
         """MR + MA + MF should stay close to 1.0 throughout."""
         # Manually step through the inline ODE to check
+        # (mirrors predict_endurance_time: kp=10, dt=0.5s → dt_min=0.00833 min)
         F, R, r, TL = 1.0, 0.02, 15, 0.35
         dt = 0.5
         dt_min = dt / 60.0
@@ -136,14 +137,16 @@ class TestPredictEnduranceTime:
             MR += dt_min * dMR
             MA += dt_min * dMA
             MF += dt_min * dMF
-            if MR < 0: MR = 0.0
-            if MA < 0: MA = 0.0
-            if MF < 0: MF = 0.0
-            total = MR + MA + MF
-            if total > 0:
-                MR /= total
-                MA /= total
-                MF /= total
+            # Conservation-preserving guard (no renormalization)
+            MA = max(0.0, MA)
+            MF = max(0.0, MF)
+            MR = 1.0 - MA - MF
+            if MR < 0.0:
+                s = MA + MF
+                if s > 0:
+                    MA /= s
+                    MF /= s
+                MR = 0.0
             assert abs(MR + MA + MF - 1.0) < 1e-10
 
     def test_isometric_F_gives_long_endurance(self):

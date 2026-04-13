@@ -136,6 +136,11 @@ class _BatchNormFlow(nn.Module):
         self.eps = eps
         self.register_buffer('running_mean', torch.zeros(num_inputs))
         self.register_buffer('running_var', torch.ones(num_inputs))
+        # M-2: Initialize batch stats so inverse mode in training doesn't
+        # AttributeError if called before a direct forward pass.
+        # These are recomputed every direct forward; not saved in state_dict.
+        self.batch_mean = torch.zeros(num_inputs)
+        self.batch_var = torch.ones(num_inputs)
 
     def forward(self, inputs, cond_inputs=None, mode='direct'):
         if mode == 'direct':
@@ -422,126 +427,6 @@ class CFDE(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# Constraint Network (Malik et al. ICML 2021, adapted for fatigue domain)
-# ---------------------------------------------------------------------------
-
-class ConstraintNetwork(nn.Module):
-    """
-    Learned constraint function c_θ(s) → [0, 1] per worker type.
-
-    Malik et al. (ICML 2021) learn c(s,a) to distinguish constraint-satisfying
-    from constraint-violating state-action pairs. In our fatigue domain, the
-    constraint is fundamentally about state (MF levels), so we learn c_θ(s).
-
-    Training: Binary cross-entropy on per-type demonstrations where:
-        - Steps with MF < type's behavioral boundary → label 0 (safe)
-        - Steps with MF near/above boundary → label 1 (constrained)
-    The boundary is where c_θ(s) = 0.5, from which we extract θ_max.
-    """
-
-    def __init__(self, state_dim: int, hidden_dim: int = 32):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(state_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, s: torch.Tensor) -> torch.Tensor:
-        return self.net(s).squeeze(-1)
-
-    def train_on_demos(
-        self,
-        states: np.ndarray,
-        n_muscles: int,
-        boundary_percentile: float = 90.0,
-        n_epochs: int = 50,
-        lr: float = 1e-3,
-    ) -> Dict[str, float]:
-        """
-        Train constraint function on demonstrations from a single type.
-
-        Labels are derived from observed MF: steps where any muscle's MF
-        exceeds the boundary_percentile of that muscle's MF distribution
-        are labeled as "near constraint" (1), others as "safe" (0).
-
-        Returns:
-            Dict mapping muscle name to learned θ_max
-        """
-        device = next(self.parameters()).device
-        muscle_names = ["shoulder", "elbow", "grip", "trunk", "ankle", "knee"]
-
-        # Extract per-muscle MF values from states
-        mf_per_muscle = {}
-        for m in range(n_muscles):
-            mf_col = states[:, 3 * m + 2]
-            mf_per_muscle[m] = mf_col
-
-        # Compute boundary for each muscle (high percentile of MF)
-        boundaries = {}
-        for m in range(n_muscles):
-            boundaries[m] = float(np.percentile(mf_per_muscle[m], boundary_percentile))
-
-        # Create binary labels: 1 if any muscle MF > its boundary
-        labels = np.zeros(len(states), dtype=np.float32)
-        for m in range(n_muscles):
-            labels[mf_per_muscle[m] >= boundaries[m]] = 1.0
-
-        # Ensure at least some positive labels (can't learn from all-zero)
-        if labels.sum() < 2:
-            # Fall back to percentile-based thresholds directly
-            theta_max = {}
-            for m in range(n_muscles):
-                name = muscle_names[m] if m < len(muscle_names) else f"muscle_{m}"
-                theta = float(np.percentile(mf_per_muscle[m], 95))
-                theta_max[name] = min(max(theta, 0.1), 0.95)
-            return theta_max
-
-        # Train
-        x = torch.tensor(states, dtype=torch.float32, device=device)
-        y = torch.tensor(labels, dtype=torch.float32, device=device)
-        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-
-        for epoch in range(n_epochs):
-            perm = torch.randperm(len(x), device=device)
-            batch_size = min(128, len(x))
-            for i in range(0, len(x), batch_size):
-                idx = perm[i:i + batch_size]
-                pred = self(x[idx])
-                loss = F.binary_cross_entropy(pred, y[idx])
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-        # Extract θ_max: sweep MF values, find where c_θ crosses 0.5
-        theta_max = {}
-        for m in range(n_muscles):
-            name = muscle_names[m] if m < len(muscle_names) else f"muscle_{m}"
-            # Create synthetic states with varying MF for this muscle
-            mf_sweep = np.linspace(0.0, 0.99, 200)
-            sweep_states = np.tile(states.mean(axis=0), (200, 1))
-            sweep_states[:, 3 * m + 2] = mf_sweep
-
-            with torch.no_grad():
-                costs = self(torch.tensor(sweep_states, dtype=torch.float32,
-                                          device=device)).cpu().numpy()
-
-            # Find crossing point where cost >= 0.5
-            crossing_idx = np.where(costs >= 0.5)[0]
-            if len(crossing_idx) > 0:
-                theta = float(mf_sweep[crossing_idx[0]])
-            else:
-                # Network never predicts constraint → use 95th percentile fallback
-                theta = float(np.percentile(mf_per_muscle[m], 95))
-
-            theta_max[name] = min(max(theta, 0.1), 0.95)
-
-        return theta_max
-
-
 # ---------------------------------------------------------------------------
 # Demonstration collection
 # ---------------------------------------------------------------------------
@@ -592,60 +477,6 @@ class DemonstrationCollector:
 
         return count
 
-    def load_real_demos(
-        self,
-        source: str,
-        path: Optional[str] = None,
-        **kwargs,
-    ) -> int:
-        """
-        Load real demonstration data from published datasets.
-
-        Supported sources:
-            'robomimic' — RoboMimic multi-proficiency human teleop (Mandlekar et al. CoRL 2021)
-            'd4rl_adroit' — D4RL Adroit human CyberGlove demos (Fu et al. 2020)
-            'pamap2' — PAMAP2 IMU + heart rate physical activity (Reiss & Stricker 2012)
-
-        Args:
-            source: Dataset name
-            path: Path to dataset files (required for robomimic, pamap2)
-            **kwargs: Dataset-specific arguments (see hcmarl.data.loaders)
-
-        Returns:
-            Number of demonstrations loaded
-        """
-        from hcmarl.data.loaders import load_dataset
-
-        raw_demos = load_dataset(source, path=path, **kwargs)
-
-        count = 0
-        for demo in raw_demos:
-            # Convert to (state, action) tuple format
-            states = demo["states"]
-            actions = demo["actions"]
-            n_steps = min(len(states), len(actions))
-
-            trajectory = []
-            for t in range(n_steps):
-                state = states[t]
-                # Pad/truncate state to expected dimension if needed
-                expected_dim = self.n_muscles * 3 + 1
-                if len(state) != expected_dim:
-                    padded = np.zeros(expected_dim, dtype=np.float32)
-                    padded[:min(len(state), expected_dim)] = state[:expected_dim]
-                    state = padded
-
-                action = actions[t]
-                if isinstance(action, np.ndarray):
-                    action = int(np.argmax(action)) if len(action) > 1 else int(action[0])
-                trajectory.append((state, int(action)))
-
-            self.demonstrations.append(trajectory)
-            self.worker_ids.append(demo["worker_id"])
-            count += 1
-
-        return count
-
     def generate_synthetic_demos(
         self,
         n_workers: int = 4,
@@ -661,14 +492,14 @@ class DemonstrationCollector:
         Type 2: Aggressive (high threshold, rare rest)
 
         WARNING: Synthetic demos are for unit testing and algorithm validation only.
-        For publication-quality results, use load_real_demos() with a real dataset
-        (RoboMimic, D4RL Adroit, or PAMAP2). See hcmarl.data.loaders for details.
+        For publication-quality results, use Path G (real_data_calibration.py) with
+        WSD4FEDSRM data to generate demonstrations from real calibrated parameters.
         """
         import warnings
         warnings.warn(
-            "Using synthetic demos. For publication, use load_real_demos() "
-            "with a real dataset (robomimic, d4rl_adroit, or pamap2). "
-            "See hcmarl.data.loaders for supported datasets.",
+            "Using synthetic demos. For publication, use Path G "
+            "(real_data_calibration.py with WSD4FEDSRM data) to generate "
+            "demonstrations from real calibrated parameters.",
             UserWarning,
             stacklevel=2,
         )
@@ -829,6 +660,18 @@ class MMICRL:
         device: str = 'cpu',
     ):
         self.n_types = n_types
+        # Remark 4.4 (Mathematical Modelling, Section 4): lambda1 = lambda2
+        # yields pure MI maximisation (Eq 11). When lambda1 != lambda2, the
+        # residual H[pi(tau)] term requires joint entropy estimation which is
+        # intractable in high dimensions. Enforce equality per the paper.
+        if abs(lambda1 - lambda2) > 1e-10:
+            import warnings
+            warnings.warn(
+                f"lambda1={lambda1} != lambda2={lambda2}. Per Remark 4.4, "
+                f"setting lambda2=lambda1={lambda1} for pure MI maximisation.",
+                UserWarning, stacklevel=2,
+            )
+            lambda2 = lambda1
         self.lambda1 = lambda1
         self.lambda2 = lambda2
         self.n_muscles = n_muscles
@@ -921,10 +764,21 @@ class MMICRL:
                 epoch_loss += loss.item()
                 n_batches += 1
 
-            # E-step: reassign trajectories via Bayesian posterior
+            # E-step: reassign trajectories via Bayesian posterior.
             # Delay first E-step to epoch 20 to let the flow learn conditional
-            # structure from K-means init. Then every 10 epochs. Guard against
-            # mode collapse: reject reassignments that empty any type.
+            # structure from K-means init. Then every 10 epochs.
+            #
+            # S-11: The 5% minimum type proportion is standard EM regularization
+            # (cf. McLachlan & Peel 2000, "Finite Mixture Models", Sec 2.13)
+            # to prevent degenerate solutions where one component collapses.
+            # n_types (K) is a hyperparameter set from domain knowledge:
+            # 3 worker archetypes (high-endurance, moderate, fatigue-prone)
+            # motivated by the WSD4FEDSRM calibration where calibrated F
+            # values span a 6x range across 34 subjects.
+            # The guard prevents EM from collapsing types during optimization
+            # but does NOT prevent natural convergence -- if two types have
+            # similar posteriors, their proportions will equalize rather than
+            # one absorbing the other.
             e_step_start = min(20, self.n_iterations // 3)
             if epoch >= e_step_start and (epoch + 1) % 10 == 0:
                 self.cfde.flow.eval()
@@ -944,7 +798,8 @@ class MMICRL:
                             self.n_types
                         ).float()
 
-        # Final trajectory-level assignment with collapse guard
+        # Final trajectory-level assignment with collapse guard (S-11: same
+        # 5% minimum as the training E-step; see McLachlan & Peel 2000)
         self.cfde.flow.eval()
         with torch.no_grad():
             final_posterior, final_assignments = self.cfde.trajectory_log_posterior(
@@ -991,21 +846,19 @@ class MMICRL:
         If CFDE soft posteriors are available and non-degenerate, both terms are
         computed from soft posteriors. If the posteriors show mode collapse (any
         type gets 0 mass), falls back to hard-assignment entropy H(z), which is
-        an upper bound on I(τ;z) (since H(z|τ)=0 for deterministic assignments).
+        an upper bound on I(tau;z) (since H(z|tau)=0 for deterministic
+        assignments), NOT a valid MI estimate.
+
+        S-10 fix: on mode collapse, return MI=0.0 with a collapsed flag
+        rather than inflating results with the degenerate H(z).
         """
         n_demos = len(assignments)
-
-        def _hard_assignment_mi():
-            """MI from hard assignments: H(z) where z ~ empirical type dist."""
-            proportions = np.array([
-                (assignments == k).sum() / n_demos
-                for k in range(self.n_types)
-            ])
-            proportions = proportions[proportions > 0]
-            return float(-np.sum(proportions * np.log(proportions + 1e-10)))
+        self._mi_collapsed = False  # flag for downstream reporting
 
         if self.cfde is None:
-            return max(0.0, _hard_assignment_mi())
+            # No CFDE trained — MI is unknown, report 0
+            self._mi_collapsed = True
+            return 0.0
 
         # Try soft posteriors from CFDE
         features_norm = (step_features - self._feature_mean) / self._feature_std
@@ -1018,17 +871,19 @@ class MMICRL:
             post = traj_post.cpu().numpy()  # (n_demos, K)
             post_clipped = np.clip(post, 1e-10, 1.0)
 
-        # Check for mode collapse: if any type gets <1% marginal mass, posteriors
-        # are degenerate and we fall back to hard assignments
+        # Check for mode collapse: if any type gets <1% marginal mass,
+        # posteriors are degenerate — CFDE failed to discriminate types.
+        # Honest response: MI=0 (we have no evidence of type separation).
         marginal = post_clipped.mean(axis=0)
         marginal = marginal / marginal.sum()
         if marginal.min() < 0.01:
-            return max(0.0, _hard_assignment_mi())
+            self._mi_collapsed = True
+            return 0.0
 
         # H(z) from marginal of soft posteriors
         h_z = -np.sum(marginal * np.log(marginal + 1e-10))
 
-        # H(z|τ) from per-trajectory posterior entropy
+        # H(z|tau) from per-trajectory posterior entropy
         h_z_given_tau = float(np.mean(
             -np.sum(post_clipped * np.log(post_clipped), axis=1)
         ))
@@ -1039,21 +894,20 @@ class MMICRL:
         self, demonstrations: List, assignments: np.ndarray
     ) -> Dict[int, Dict[str, float]]:
         """
-        Learn per-type safety thresholds using a constraint network (Malik et al.
-        ICML 2021), adapted for the fatigue domain.
+        Two-stage per-type safety thresholds (C-4 fix):
+          Stage 1 (CFDE): type discovery — already done by fit() before this call
+          Stage 2 (direct): theta_max = 90th percentile of MF within each type's demos
 
-        For each discovered type k:
-        1. Collect all states from type-k demonstrations
-        2. Train a ConstraintNetwork c_θ(s) on binary labels (safe vs near-boundary)
-        3. Extract θ_max per muscle from the learned decision boundary (c_θ = 0.5)
-
-        This is a proper learned constraint function, not just a percentile.
+        This cleanly separates the novel contribution (CFDE type discovery) from
+        the simple estimation (percentile thresholds). No ConstraintNetwork —
+        training a network on percentile-derived labels and extracting where it
+        crosses 0.5 recovers the input percentile with no ICRL signal.
         """
         theta_per_type = {}
-        state_dim = self.n_muscles * 3 + 1  # MR,MA,MF per muscle + timestep
+        muscle_names = ["shoulder", "elbow", "grip", "trunk", "ankle", "knee"]
 
         for k in range(self.n_types):
-            # Collect states from type-k demos
+            # Collect MF values from type-k demos
             type_states = []
             for demo_idx, type_k in enumerate(assignments):
                 if int(type_k) == k:
@@ -1062,8 +916,6 @@ class MMICRL:
                         type_states.append(state.astype(np.float32))
 
             if len(type_states) < 10:
-                # Too few samples — use conservative defaults
-                muscle_names = ["shoulder", "elbow", "grip", "trunk", "ankle", "knee"]
                 theta_per_type[k] = {}
                 for m in range(self.n_muscles):
                     name = muscle_names[m] if m < len(muscle_names) else f"muscle_{m}"
@@ -1072,12 +924,13 @@ class MMICRL:
 
             states_arr = np.array(type_states, dtype=np.float32)
 
-            # Train constraint network for this type
-            c_net = ConstraintNetwork(state_dim, hidden_dim=32).to(self.device)
-            theta_per_type[k] = c_net.train_on_demos(
-                states_arr, self.n_muscles, boundary_percentile=90.0,
-                n_epochs=50, lr=1e-3,
-            )
+            # Direct percentile: theta_max_m = 90th percentile of MF_m
+            theta_per_type[k] = {}
+            for m in range(self.n_muscles):
+                mf_col = states_arr[:, 3 * m + 2]  # MF column for muscle m
+                theta = float(np.percentile(mf_col, 90))
+                name = muscle_names[m] if m < len(muscle_names) else f"muscle_{m}"
+                theta_per_type[k][name] = min(max(theta, 0.1), 0.95)
 
         return theta_per_type
 
@@ -1089,13 +942,22 @@ class MMICRL:
           3. Compute MI objective I(τ; z) from trajectory posteriors
           4. Learn per-type constraint boundaries via constraint networks
         """
-        # Auto-detect n_actions from demonstration data
+        # S-14: n_actions should be passed explicitly from the env to avoid
+        # undercounting when the rest action (highest index) never appears in
+        # demos. Auto-detect is kept as fallback but emits a warning.
         if n_actions is None:
+            import warnings
             max_action = 0
             for traj in collector.demonstrations:
                 for _, action in traj:
                     max_action = max(max_action, int(action))
             n_actions = max_action + 1
+            warnings.warn(
+                f"n_actions auto-detected as {n_actions} from max(action)+1. "
+                f"If the rest action is never used in demos, this undercounts. "
+                f"Pass n_actions explicitly from env.n_tasks for safety.",
+                UserWarning, stacklevel=2,
+            )
 
         n_demos = len(collector.demonstrations)
         step_features, traj_indices = collector.get_step_data(n_actions=n_actions)
@@ -1111,23 +973,17 @@ class MMICRL:
             collector.demonstrations, assignments
         )
 
-        # Compute objective (Eq 10): λ₂·I(τ;z) + (λ₁-λ₂)·H[π(τ)]
-        # H[π(τ)] estimated from per-step features (same space as CFDE)
-        h_marginal = 0.0
-        if abs(self.lambda1 - self.lambda2) > 1e-10:
-            n_bins = max(5, int(np.sqrt(len(step_features))))
-            for col in range(step_features.shape[1]):
-                counts, _ = np.histogram(step_features[:, col], bins=n_bins)
-                probs = counts[counts > 0] / counts.sum()
-                h_marginal += float(-np.sum(probs * np.log(probs + 1e-10)))
-            h_marginal /= step_features.shape[1]
-        objective = self.lambda2 * mi + (self.lambda1 - self.lambda2) * h_marginal
+        # Objective (Eq 11, Remark 4.4): lambda * I(tau; z)
+        # With lambda1 = lambda2 enforced in __init__, the (lambda1-lambda2)*H[pi(tau)]
+        # residual is exactly zero — no need to estimate joint trajectory entropy.
+        objective = self.lambda1 * mi
 
         results = {
             "n_demonstrations": n_demos,
             "n_types_discovered": self.n_types,
             "type_proportions": self.type_proportions.tolist(),
             "mutual_information": mi,
+            "mi_collapsed": self._mi_collapsed,
             "objective_value": objective,
             "theta_per_type": self.theta_max_per_type,
             "lambda1": self.lambda1,
@@ -1265,41 +1121,9 @@ class OnlineAdapter:
 # Validation against ground truth
 # ---------------------------------------------------------------------------
 
-def validate_mmicrl(
-    n_workers: int = 12,
-    n_episodes_per_worker: int = 50,
-    n_types: int = 3,
-    verbose: bool = True,
-) -> Dict[str, Any]:
-    """
-    End-to-end validation:
-      1. Generate synthetic demos with known types
-      2. Run MMICRL to discover types
-      3. Compare learned thresholds with ground truth
-    """
-    collector = DemonstrationCollector(n_muscles=3)
-    n_demos = collector.generate_synthetic_demos(
-        n_workers=n_workers,
-        n_episodes_per_worker=n_episodes_per_worker,
-        n_muscles=3,
-    )
-
-    mmicrl = MMICRL(n_types=n_types, lambda1=1.0, lambda2=1.0, n_muscles=3)
-    results = mmicrl.fit(collector)
-
-    if verbose:
-        print(f"MMICRL Validation Results:")
-        print(f"  Demonstrations: {results['n_demonstrations']}")
-        print(f"  Types discovered: {results['n_types_discovered']}")
-        print(f"  Type proportions: {results['type_proportions']}")
-        print(f"  Mutual information: {results['mutual_information']:.4f}")
-        print(f"  Objective value: {results['objective_value']:.4f}")
-        print(f"  Learned thresholds:")
-        for k, thetas in results['theta_per_type'].items():
-            print(f"    Type {k}: {thetas}")
-
-    return results
-
-
-if __name__ == "__main__":
-    validate_mmicrl(verbose=True)
+# S-13: validate_mmicrl() and __main__ block removed from production module.
+# The function used generate_synthetic_demos() — running `python -m hcmarl.mmicrl`
+# would produce results from synthetic data that could be mistaken for real.
+# Validation now lives exclusively in tests/test_phase3.py using Path G
+# (WSD4FEDSRM-calibrated) demos. See also generate_synthetic_demos() which
+# is retained for unit testing but carries a UserWarning.

@@ -22,8 +22,14 @@ import dataclasses
 from typing import Optional
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 from hcmarl.utils import safe_log
+
+# S-16: Single source of truth for the rest-surplus epsilon (Eq 31).
+# Used by both the NSWF allocator objective and the per-step reward signal
+# to ensure the policy and allocator see the same landscape.
+NSWF_EPSILON = 1e-3
 
 
 @dataclasses.dataclass
@@ -36,7 +42,7 @@ class NSWFParams:
     """
 
     kappa: float = 1.0
-    epsilon: float = 1e-3
+    epsilon: float = NSWF_EPSILON
 
     def __post_init__(self) -> None:
         if self.kappa <= 0.0:
@@ -74,10 +80,10 @@ class NSWFAllocator:
         (ii)  Each productive task assigned to at most one worker.
         (iii) Multiple workers may rest simultaneously (task 0).
 
-    Implementation uses brute-force enumeration for small N, M (sufficient
-    for warehouse scenarios with N <= 12 workers and M <= 12 tasks).
-    For larger instances, the log-NSWF can be solved via the Hungarian
-    algorithm on transformed costs.
+    Implementation uses the Hungarian algorithm (scipy.optimize.linear_sum_assignment)
+    on the cost matrix C[i,j] = -ln(surplus[i,j]). This gives an exact O(N^3) solution
+    for any N, M. The rest option (task 0) is handled by adding N virtual rest columns
+    so that any number of workers can rest simultaneously (Def 6.1, constraint iii).
 
     Args:
         params: NSWF configuration parameters.
@@ -221,12 +227,7 @@ class NSWFAllocator:
         # (from Eq 31: U(i,0) - D_i = epsilon)
         eps = self.params.epsilon
 
-        # Use greedy assignment for small problems
-        # (brute-force permutation for optimal, but greedy is O(NM))
-        if N <= 8 and M <= 8:
-            return self._solve_exact(N, M, surplus_matrix, D, eps)
-        else:
-            return self._solve_greedy(N, M, surplus_matrix, D, eps)
+        return self._solve_hungarian(N, M, surplus_matrix, D, eps)
 
     def _solve_exact(
         self,
@@ -304,7 +305,7 @@ class NSWFAllocator:
             disagreement_utilities={i: float(D[i]) for i in range(N)},
         )
 
-    def _solve_greedy(
+    def _solve_hungarian(
         self,
         N: int,
         M: int,
@@ -312,44 +313,55 @@ class NSWFAllocator:
         D: np.ndarray,
         eps: float,
     ) -> AllocationResult:
-        """Greedy approximation for larger instances.
+        """Exact NSWF solver via Hungarian algorithm on -ln(surplus) costs.
 
-        Assigns workers to tasks in order of maximum log-surplus gain,
-        respecting the one-task-per-worker and one-worker-per-task constraints.
+        The NSWF objective (Eq 33) is sum_i ln(surplus_i). This is equivalent
+        to a linear assignment problem on cost_ij = -ln(surplus_ij).
+
+        To handle the rest option (task 0), which any number of workers can
+        take simultaneously, we add N virtual rest columns — each with cost
+        -ln(eps). Since rest columns are identical and each assigned to at
+        most one worker, this allows 0 to N workers to rest.
+
+        Complexity: O((N + M)^3) via scipy's Hungarian implementation.
         """
-        assignments: dict[int, int] = {}
-        used_tasks: set[int] = set()
-        surpluses: dict[int, float] = {}
+        LARGE_COST = 1e12  # forbid assignments with non-positive surplus
 
-        # Build candidate list: (log_surplus_gain, worker, task_1indexed)
-        candidates = []
+        # Build cost matrix: N rows x (M productive + N rest columns)
+        n_cols = M + N
+        cost = np.full((N, n_cols), LARGE_COST, dtype=np.float64)
+
+        # Productive task columns (0..M-1): cost = -ln(surplus)
         for i in range(N):
-            for j_idx in range(M):
-                s = surplus_matrix[i, j_idx]
+            for j in range(M):
+                s = surplus_matrix[i, j]
                 if s > 0:
-                    gain = safe_log(s) - safe_log(eps)
-                    candidates.append((gain, i, j_idx + 1))
+                    cost[i, j] = -safe_log(s)
+                # else: remains LARGE_COST (infeasible)
 
-        # Sort by gain descending
-        candidates.sort(key=lambda x: x[0], reverse=True)
-
-        assigned_workers: set[int] = set()
-
-        for gain, i, j in candidates:
-            if i in assigned_workers or (j - 1) in used_tasks:
-                continue
-            assignments[i] = j
-            surpluses[i] = float(surplus_matrix[i, j - 1])
-            assigned_workers.add(i)
-            used_tasks.add(j - 1)
-
-        # Unassigned workers get rest
+        # Rest columns (M..M+N-1): cost = -ln(eps) for every worker
+        rest_cost = -safe_log(eps)
         for i in range(N):
-            if i not in assignments:
+            for k in range(N):
+                cost[i, M + k] = rest_cost
+
+        # Solve via Hungarian (linear_sum_assignment minimises total cost)
+        row_ind, col_ind = linear_sum_assignment(cost)
+
+        # Decode assignments
+        assignments: dict[int, int] = {}
+        surpluses: dict[int, float] = {}
+        for i, c in zip(row_ind, col_ind):
+            if c < M:
+                # Productive task (1-indexed in result)
+                assignments[i] = c + 1
+                surpluses[i] = float(surplus_matrix[i, c])
+            else:
+                # Rest column
                 assignments[i] = 0
                 surpluses[i] = eps
 
-        # Compute objective
+        # Compute NSWF objective
         obj = sum(safe_log(s) for s in surpluses.values())
 
         return AllocationResult(
@@ -358,3 +370,213 @@ class NSWFAllocator:
             surpluses=surpluses,
             disagreement_utilities={i: float(D[i]) for i in range(N)},
         )
+
+
+# =========================================================================
+# C-7.R: Welfare function variants for ablation
+# =========================================================================
+
+class UtilitarianAllocator(NSWFAllocator):
+    """Utilitarian welfare: max sum_i S_i (no log transform).
+
+    Maximises total surplus. Favours efficiency over equity.
+    This is the standard assignment problem, solvable via Hungarian.
+    """
+
+    def _solve_hungarian(self, N, M, surplus_matrix, D, eps):
+        """Exact utilitarian solver: cost = -surplus (linear assignment)."""
+        LARGE_COST = 1e12
+
+        n_cols = M + N
+        cost = np.full((N, n_cols), LARGE_COST, dtype=np.float64)
+
+        for i in range(N):
+            for j in range(M):
+                s = surplus_matrix[i, j]
+                if s > 0:
+                    cost[i, j] = -s  # maximise surplus = minimise -surplus
+                # else: LARGE_COST (infeasible)
+
+        # Rest columns: cost = -eps
+        for i in range(N):
+            for k in range(N):
+                cost[i, M + k] = -eps
+
+        row_ind, col_ind = linear_sum_assignment(cost)
+
+        assignments: dict[int, int] = {}
+        surpluses: dict[int, float] = {}
+        for i, c in zip(row_ind, col_ind):
+            if c < M:
+                assignments[i] = c + 1
+                surpluses[i] = float(surplus_matrix[i, c])
+            else:
+                assignments[i] = 0
+                surpluses[i] = eps
+
+        obj = sum(surpluses.values())
+        return AllocationResult(
+            assignments=assignments, objective_value=obj,
+            surpluses=surpluses,
+            disagreement_utilities={i: float(D[i]) for i in range(N)},
+        )
+
+
+class MaxMinAllocator(NSWFAllocator):
+    """Rawlsian max-min welfare: max min_i S_i.
+
+    Maximises the worst-off worker's surplus. Maximum equity.
+    Not a standard linear assignment — uses exact enumeration.
+    Feasible for all practical N since M (productive tasks) is small.
+    """
+
+    def _solve_hungarian(self, N, M, surplus_matrix, D, eps):
+        """MaxMin is not a linear assignment problem.
+        Use exact enumeration (feasible since M is small in practice).
+        """
+        return self._solve_exact(N, M, surplus_matrix, D, eps)
+
+    def _solve_exact(self, N, M, surplus_matrix, D, eps):
+        best_obj = -float("inf")
+        best_assign = {i: 0 for i in range(N)}
+
+        def _search(worker, used_tasks, assignment):
+            nonlocal best_obj, best_assign
+            if worker == N:
+                obj = min(
+                    eps if assignment[i] == 0
+                    else surplus_matrix[i, assignment[i] - 1]
+                    for i in range(N)
+                )
+                if obj > best_obj:
+                    best_obj = obj
+                    best_assign = dict(assignment)
+                return
+            assignment[worker] = 0
+            _search(worker + 1, used_tasks, assignment)
+            for j_idx in range(M):
+                if j_idx not in used_tasks:
+                    s = surplus_matrix[worker, j_idx]
+                    if s > 0:
+                        assignment[worker] = j_idx + 1
+                        used_tasks.add(j_idx)
+                        _search(worker + 1, used_tasks, assignment)
+                        used_tasks.remove(j_idx)
+            assignment[worker] = 0
+        _search(0, set(), {})
+
+        surpluses = {}
+        for i in range(N):
+            j = best_assign[i]
+            surpluses[i] = eps if j == 0 else float(surplus_matrix[i, j - 1])
+        return AllocationResult(
+            assignments=best_assign, objective_value=best_obj,
+            surpluses=surpluses,
+            disagreement_utilities={i: float(D[i]) for i in range(N)},
+        )
+
+
+class GiniAllocator(NSWFAllocator):
+    """Gini welfare: max sum_i S_i - lambda * Gini(S).
+
+    Maximises total surplus penalised by inequality (Gini coefficient).
+    lambda controls the efficiency-equity tradeoff.
+    Not a standard linear assignment — uses exact enumeration.
+    Feasible for all practical N since M (productive tasks) is small.
+    """
+
+    def __init__(self, params=None, gini_lambda=1.0):
+        super().__init__(params)
+        self.gini_lambda = gini_lambda
+
+    @staticmethod
+    def _gini_coefficient(values):
+        """Compute Gini coefficient of a list of positive values."""
+        n = len(values)
+        if n <= 1 or sum(values) == 0:
+            return 0.0
+        sorted_vals = sorted(values)
+        total = sum(sorted_vals)
+        cum = 0.0
+        gini_sum = 0.0
+        for i, v in enumerate(sorted_vals):
+            cum += v
+            gini_sum += (2 * (i + 1) - n - 1) * v
+        return gini_sum / (n * total)
+
+    def _solve_hungarian(self, N, M, surplus_matrix, D, eps):
+        """Gini is not a linear assignment problem.
+        Use exact enumeration (feasible since M is small in practice).
+        """
+        return self._solve_exact(N, M, surplus_matrix, D, eps)
+
+    def _solve_exact(self, N, M, surplus_matrix, D, eps):
+        best_obj = -float("inf")
+        best_assign = {i: 0 for i in range(N)}
+
+        def _search(worker, used_tasks, assignment):
+            nonlocal best_obj, best_assign
+            if worker == N:
+                surps = [
+                    eps if assignment[i] == 0
+                    else surplus_matrix[i, assignment[i] - 1]
+                    for i in range(N)
+                ]
+                total = sum(surps)
+                gini = self._gini_coefficient(surps)
+                obj = total - self.gini_lambda * gini * total
+                if obj > best_obj:
+                    best_obj = obj
+                    best_assign = dict(assignment)
+                return
+            assignment[worker] = 0
+            _search(worker + 1, used_tasks, assignment)
+            for j_idx in range(M):
+                if j_idx not in used_tasks:
+                    s = surplus_matrix[worker, j_idx]
+                    if s > 0:
+                        assignment[worker] = j_idx + 1
+                        used_tasks.add(j_idx)
+                        _search(worker + 1, used_tasks, assignment)
+                        used_tasks.remove(j_idx)
+            assignment[worker] = 0
+        _search(0, set(), {})
+
+        surpluses = {}
+        for i in range(N):
+            j = best_assign[i]
+            surpluses[i] = eps if j == 0 else float(surplus_matrix[i, j - 1])
+        return AllocationResult(
+            assignments=best_assign, objective_value=best_obj,
+            surpluses=surpluses,
+            disagreement_utilities={i: float(D[i]) for i in range(N)},
+        )
+
+
+# Registry for welfare function ablation (C-7.R)
+WELFARE_ALLOCATORS = {
+    "nswf": NSWFAllocator,
+    "utilitarian": UtilitarianAllocator,
+    "maxmin": MaxMinAllocator,
+    "gini": GiniAllocator,
+}
+
+
+def create_allocator(welfare_type="nswf", params=None, **kwargs):
+    """Factory for welfare function allocators.
+
+    Args:
+        welfare_type: One of "nswf", "utilitarian", "maxmin", "gini".
+        params: NSWFParams instance.
+        **kwargs: Additional kwargs (e.g. gini_lambda for GiniAllocator).
+
+    Returns:
+        Allocator instance.
+    """
+    cls = WELFARE_ALLOCATORS.get(welfare_type)
+    if cls is None:
+        valid = ", ".join(sorted(WELFARE_ALLOCATORS.keys()))
+        raise ValueError(f"Unknown welfare type '{welfare_type}'. Valid: {valid}")
+    if welfare_type == "gini":
+        return cls(params=params, **kwargs)
+    return cls(params=params)

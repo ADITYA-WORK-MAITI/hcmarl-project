@@ -1,9 +1,7 @@
 """
-HC-MARL Phase 3 (#46): SafePO Baseline Wrapper
-MACPO (Multi-Agent Constrained Policy Optimisation) from SafePO.
-
-When SafePO is not installed, falls back to a built-in MAPPO-Lagrangian
-so MACPO experiments can still run (same algorithm family, honest comparison).
+HC-MARL: MAPPO-Lagrangian Baseline Wrapper
+Wraps MAPPOLagrangian with SafePO-compatible interface.
+This is an honest MAPPO-Lagrangian baseline (cost critic + dual variable).
 """
 import numpy as np
 import torch
@@ -13,8 +11,8 @@ from hcmarl.agents.mappo_lag import MAPPOLagrangian
 
 
 class SafePOWrapper:
-    """Wraps SafePO MACPO with HC-MARL's multi-agent action interface.
-    Falls back to MAPPOLagrangian if SafePO is not installed."""
+    """MAPPO-Lagrangian baseline with SafePO-compatible interface.
+    Always uses our own MAPPOLagrangian (no external SafePO dependency)."""
 
     def __init__(self, obs_dim=19, n_actions=6, n_agents=4, config=None, device="cpu"):
         self.obs_dim = obs_dim
@@ -22,7 +20,7 @@ class SafePOWrapper:
         self.n_agents = n_agents
         self.config = config or {}
         self.device = device
-        self.name = "SafePO-MACPO"
+        self.name = "MAPPO-Lagrangian"
         self._safepo_available = False
         self._safepo_agent = None
 

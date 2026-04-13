@@ -20,6 +20,18 @@ class HCMARLLogger:
         "peak_fatigue", "forced_rest_rate", "constraint_recovery_time",
     ]
 
+    # S-36: Fixed CSV column set — all 9 declared metrics + known extras.
+    # New columns from agent types (e.g. "lambda" from Lagrangian) are included.
+    # extrasaction="ignore" drops any undeclared fields safely.
+    CSV_COLUMNS = sorted([
+        "episode", "global_step", "wall_time",
+        "violation_rate", "cumulative_cost", "safety_rate",
+        "tasks_completed", "cumulative_reward", "jain_fairness",
+        "peak_fatigue", "forced_rest_rate", "constraint_recovery_time",
+        "safety_autonomy_index", "ecbf_interventions",
+        "lambda", "policy_loss", "value_loss", "entropy",
+    ])
+
     def __init__(self, log_dir="logs", use_wandb=False, wandb_project="hcmarl",
                  wandb_entity=None, run_name=None, config=None):
         self.log_dir = log_dir
@@ -29,7 +41,27 @@ class HCMARLLogger:
         self.history = defaultdict(list)
         os.makedirs(log_dir, exist_ok=True)
         self.csv_path = os.path.join(log_dir, "training_log.csv")
-        self._csv_initialized = False
+        self._csv_columns = list(self.CSV_COLUMNS)
+
+        # S-37: detect existing CSV and resume (append) instead of overwriting
+        if os.path.exists(self.csv_path) and os.path.getsize(self.csv_path) > 0:
+            # Validate existing header matches expected columns
+            with open(self.csv_path, "r", newline="") as f:
+                reader = csv.reader(f)
+                try:
+                    existing_header = next(reader)
+                except StopIteration:
+                    existing_header = []
+            if existing_header == self._csv_columns:
+                self._csv_initialized = True
+            else:
+                # Header mismatch — existing file has different schema.
+                # Rename old file to avoid data loss, start fresh.
+                backup = self.csv_path + ".bak"
+                os.replace(self.csv_path, backup)
+                self._csv_initialized = False
+        else:
+            self._csv_initialized = False
 
         if use_wandb:
             try:
@@ -53,12 +85,15 @@ class HCMARLLogger:
         metrics["episode"] = self.episode_count
         if not self._csv_initialized:
             with open(self.csv_path, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=sorted(metrics.keys()))
+                writer = csv.DictWriter(f, fieldnames=self._csv_columns,
+                                        extrasaction="ignore")
                 writer.writeheader()
             self._csv_initialized = True
         with open(self.csv_path, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=sorted(metrics.keys()))
-            writer.writerow({k: f"{v:.6f}" if isinstance(v, float) else v for k, v in metrics.items()})
+            writer = csv.DictWriter(f, fieldnames=self._csv_columns,
+                                    extrasaction="ignore", restval="")
+            writer.writerow({k: f"{v:.6f}" if isinstance(v, float) else v
+                            for k, v in metrics.items() if k in self._csv_columns})
         if self.use_wandb:
             self.wandb.log(metrics, step=self.episode_count)
 

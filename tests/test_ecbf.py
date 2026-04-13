@@ -217,7 +217,7 @@ class TestQPFilter:
         state = ThreeCCrState(MR=0.5, MA=0.3, MF=0.2)
         C_nom = 0.05
         C_qp, _ = self.filt.filter(state, C_nom, target_load=0.3)
-        C_an = self.filt.filter_analytical(state, C_nom, target_load=0.3)
+        C_an, _infeasible = self.filt.filter_analytical(state, C_nom, target_load=0.3)
         assert abs(C_qp - C_an) < 1e-4
 
     def test_diagnostics_complete(self):

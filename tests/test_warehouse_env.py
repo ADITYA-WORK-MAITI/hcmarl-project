@@ -1,7 +1,7 @@
 """Tests for Phase 2: Warehouse environment (#22)."""
 import sys, os, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from hcmarl.envs.warehouse_env import WarehouseEnv
+from hcmarl.warehouse_env import SingleWorkerWarehouseEnv as WarehouseEnv
 
 def test_env_reset():
     env = WarehouseEnv(); obs, info = env.reset()

@@ -36,11 +36,11 @@ class RolloutBuffer:
         self._log_probs = {a: [] for a in self.agent_ids}
         self._rewards = {a: [] for a in self.agent_ids}
         self._dones = []  # Shared (episode-level termination)
-        self._values = []  # Centralised critic: one value per timestep
+        self._values = []  # Per-agent critic values: dict {agent_id: float} per timestep (C-9.A)
         self._n_steps = 0
 
     def store_step(self, obs_dict, global_state, actions_dict, log_probs_dict,
-                   rewards_dict, done, value):
+                   rewards_dict, done, values):
         """Store one timestep for ALL agents simultaneously.
 
         Args:
@@ -50,7 +50,7 @@ class RolloutBuffer:
             log_probs_dict: {agent_id: log_prob_float}
             rewards_dict: {agent_id: reward_float}
             done: bool/float, shared episode termination
-            value: float, centralised critic value for this timestep
+            values: dict {agent_id: float} — per-agent critic values (C-9.A)
         """
         # Initialise agent_ids on first call if not set
         if not self.agent_ids:
@@ -68,19 +68,31 @@ class RolloutBuffer:
 
         self._global_states.append(global_state)
         self._dones.append(float(done))
-        self._values.append(value)
+        # C-9.A: store per-agent values (dict or scalar for backward compat)
+        if isinstance(values, dict):
+            self._values.append(values)
+        else:
+            # Legacy scalar: broadcast to all agents
+            self._values.append({a: float(values) for a in self.agent_ids})
         self._n_steps += 1
 
     # Legacy compatibility: store() for per-agent calls from old train.py
     # This is a shim — new code should use store_step()
     _legacy_pending = None
 
-    def store(self, obs, global_state, action, log_prob, reward, done, value):
-        """Legacy per-agent store. Accumulates calls then flushes per timestep."""
+    def store(self, obs, global_state, action, log_prob, reward, done, values):
+        """Legacy per-agent store. Accumulates N calls then flushes one timestep.
+
+        S-24: Call-order contract — this method must be called exactly N
+        times per timestep (once per agent), in the order matching
+        self.agent_ids (which is sorted(actions.keys()) from train.py).
+        The i-th call stores data for agent_ids[i]. After the N-th call,
+        the accumulated data is flushed. Prefer store_step() for new code.
+        """
         if self._legacy_pending is None:
             self._legacy_pending = {
                 'obs': {}, 'actions': {}, 'log_probs': {}, 'rewards': {},
-                'global_state': global_state, 'done': done, 'value': value,
+                'global_state': global_state, 'done': done, 'value': values,
                 '_call_count': 0,
             }
 
@@ -90,6 +102,13 @@ class RolloutBuffer:
                              "Pass agent_ids at construction time.")
 
         idx = self._legacy_pending['_call_count']
+        # S-24: Guard against overflow — more calls than agents
+        if idx >= len(self.agent_ids):
+            raise RuntimeError(
+                f"RolloutBuffer.store() called {idx+1} times "
+                f"for a {len(self.agent_ids)}-agent buffer. Expected exactly "
+                f"{len(self.agent_ids)} calls per timestep."
+            )
         if idx < len(self.agent_ids):
             a = self.agent_ids[idx]
             self._legacy_pending['obs'][a] = obs
@@ -111,8 +130,25 @@ class RolloutBuffer:
             )
             self._legacy_pending = None
 
-    def compute_returns(self, last_value, gamma=0.99, gae_lambda=0.95):
-        """Compute GAE per-agent, then flatten.
+    def compute_returns(self, last_values, gamma=0.99, gae_lambda=0.95,
+                         last_episode_truncated=True):
+        """Compute GAE per-agent with per-agent value baselines, then flatten.
+
+        C-9.A fix: Each agent uses its OWN value baseline V(s, agent_id)
+        rather than a shared V(s), enabling proper per-agent credit assignment.
+
+        S-19 fix: Distinguishes truncation from termination at the last step.
+        For truncated episodes (time limit), the bootstrap V(s_next) is used.
+        For terminated episodes (true terminal state), the bootstrap is 0.
+        See Pardo et al. (2018) "Time Limits in RL" for why this matters.
+
+        Args:
+            last_values: dict {agent_id: float} -- bootstrap values for each agent.
+                For backward compat, also accepts a scalar (broadcast to all).
+            last_episode_truncated: If True, the episode ended by time limit
+                (not true termination), so the last bootstrap should NOT be
+                zeroed by the done mask. Default True since the warehouse env
+                always truncates at max_steps.
 
         Returns:
             advantages: (T * N_agents,) flattened
@@ -122,24 +158,35 @@ class RolloutBuffer:
         if T == 0:
             return np.zeros(0), np.zeros(0)
 
-        values = np.array(self._values)  # (T,)
         dones = np.array(self._dones)    # (T,)
-        N = len(self.agent_ids)
+
+        # Handle scalar last_value for backward compat
+        if not isinstance(last_values, dict):
+            last_values = {a: float(last_values) for a in self.agent_ids}
 
         all_advantages = []
         all_returns = []
 
         for a in self.agent_ids:
+            # Per-agent value trajectory
+            values_a = np.array([v[a] for v in self._values])  # (T,)
             rewards_a = np.array(self._rewards[a])  # (T,)
             adv_a = np.zeros(T)
             last_gae = 0.0
             for t in reversed(range(T)):
-                next_val = last_value if t == T - 1 else values[t + 1]
-                next_non_term = 1.0 - dones[t]
-                delta = rewards_a[t] + gamma * next_val * next_non_term - values[t]
+                if t == T - 1:
+                    next_val = last_values[a]
+                    # S-19: for truncated episodes, don't zero the bootstrap
+                    # S-20: done mask at intermediate steps correctly handles
+                    # episode boundaries (next_non_term=0 when done[t]=1)
+                    next_non_term = 1.0 if last_episode_truncated else (1.0 - dones[t])
+                else:
+                    next_val = values_a[t + 1]
+                    next_non_term = 1.0 - dones[t]
+                delta = rewards_a[t] + gamma * next_val * next_non_term - values_a[t]
                 last_gae = delta + gamma * gae_lambda * next_non_term * last_gae
                 adv_a[t] = last_gae
-            ret_a = adv_a + values
+            ret_a = adv_a + values_a
             all_advantages.append(adv_a)
             all_returns.append(ret_a)
 
@@ -154,7 +201,10 @@ class RolloutBuffer:
         """Get flattened tensors for PPO update.
 
         Returns obs, global_states, actions, log_probs as (T*N, ...) tensors.
-        Global states are repeated N times per timestep (same for all agents).
+
+        C-9.A fix: Global states are augmented with agent-id one-hot so the
+        critic receives (global_state, agent_id) and can produce per-agent
+        value estimates instead of learning the team mean.
         """
         T = self._n_steps
         N = len(self.agent_ids)
@@ -166,11 +216,14 @@ class RolloutBuffer:
                 obs_list.append(self._obs[a][t])
         obs = torch.FloatTensor(np.array(obs_list)).to(device)
 
-        # Global states: repeat for each agent at each timestep
+        # Global states: augment with agent-id one-hot (C-9.A)
         gs_list = []
         for t in range(T):
-            for _ in self.agent_ids:
-                gs_list.append(self._global_states[t])
+            for i in range(N):
+                one_hot = np.zeros(N, dtype=np.float32)
+                one_hot[i] = 1.0
+                gs_aug = np.concatenate([self._global_states[t], one_hot])
+                gs_list.append(gs_aug)
         gs = torch.FloatTensor(np.array(gs_list)).to(device)
 
         # Actions and log_probs: flatten same way
@@ -206,24 +259,35 @@ class MAPPO:
         self.device = torch.device(device)
 
         self.actor = ActorNetwork(obs_dim, n_actions).to(self.device)
-        self.critic = CriticNetwork(global_obs_dim).to(self.device)
+        # C-9.A: Critic input = global_obs + agent_id one-hot, so it can
+        # produce per-agent value estimates (Yu et al. 2022, Section 3.2)
+        self.critic = CriticNetwork(global_obs_dim + n_agents).to(self.device)
         self.actor_optim = optim.Adam(self.actor.parameters(), lr=lr_actor)
         self.critic_optim = optim.Adam(self.critic.parameters(), lr=lr_critic)
 
         agent_ids = [f"worker_{i}" for i in range(n_agents)]
         self.buffer = RolloutBuffer(agent_ids=agent_ids)
 
+    def _augment_gs(self, gs_tensor, agent_idx):
+        """Append agent-id one-hot to global state for per-agent critic (C-9.A)."""
+        one_hot = torch.zeros(self.n_agents, device=self.device)
+        one_hot[agent_idx] = 1.0
+        return torch.cat([gs_tensor, one_hot])
+
     def get_actions(self, observations: Dict[str, np.ndarray], global_state: np.ndarray):
-        actions, log_probs = {}, {}
+        actions, log_probs, values = {}, {}, {}
         gs = torch.FloatTensor(global_state).to(self.device)
-        value = self.critic(gs).item()
-        for agent_id, obs in observations.items():
-            obs_t = torch.FloatTensor(obs).to(self.device)
+        sorted_agents = sorted(observations.keys())
+        for i, agent_id in enumerate(sorted_agents):
+            obs_t = torch.FloatTensor(observations[agent_id]).to(self.device)
             with torch.no_grad():
                 action, lp, _ = self.actor.get_action(obs_t)
             actions[agent_id] = action.item()
             log_probs[agent_id] = lp.item()
-        return actions, log_probs, value
+            # C-9.A: per-agent value via augmented global state
+            gs_aug = self._augment_gs(gs, i)
+            values[agent_id] = self.critic(gs_aug).item()
+        return actions, log_probs, values
 
     def update(self):
         if len(self.buffer) < self.batch_size:
@@ -232,14 +296,17 @@ class MAPPO:
         obs, gs, acts, old_lp = self.buffer.get_flat_tensors(self.device)
 
         with torch.no_grad():
-            # Use last global state for bootstrap value
+            # C-9.A: per-agent bootstrap values
             last_gs = torch.FloatTensor(
                 self.buffer._global_states[-1]
             ).to(self.device)
-            last_val = self.critic(last_gs).item()
+            last_values = {}
+            for i, a in enumerate(self.buffer.agent_ids):
+                gs_aug = self._augment_gs(last_gs, i)
+                last_values[a] = self.critic(gs_aug).item()
 
         advantages, returns = self.buffer.compute_returns(
-            last_val, self.gamma, self.gae_lambda
+            last_values, self.gamma, self.gae_lambda
         )
         adv_t = torch.FloatTensor(advantages).to(self.device)
         ret_t = torch.FloatTensor(returns).to(self.device)

@@ -1,5 +1,4 @@
-"""HC-MARL Baselines package — OmniSafe and SafePO wrappers + legacy baselines."""
-from hcmarl.baselines.omnisafe_wrapper import OmniSafeWrapper
+"""HC-MARL Baselines package — MAPPO-Lagrangian wrapper + legacy baselines."""
 from hcmarl.baselines.safepo_wrapper import SafePOWrapper
 
 # Re-export Phase 2 legacy baselines so existing imports keep working
