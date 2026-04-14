@@ -216,7 +216,8 @@ def run_mmicrl_pretrain(cfg, log_dir="logs"):
 # ---------------------------------------------------------------------------
 
 def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmicrl_model=None,
-          ecbf_mode="on", use_nswf=True, disagreement_type="divergent"):
+          ecbf_mode="on", use_nswf=True, disagreement_type="divergent",
+          drive_backup_dir=None):
     """Full training loop with logging and checkpointing."""
     # Full seeding: numpy, torch (CPU+CUDA), cudnn.deterministic, PYTHONHASHSEED.
     # Python stdlib random is seeded too — MMICRL / allocator internals may use it.
@@ -546,6 +547,19 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
             if hasattr(agent, 'save'):
                 ckpt_path = os.path.join(ckpt_dir, f"checkpoint_{global_step}.pt")
                 agent.save(ckpt_path)
+            # Mirror to Drive (survives Colab runtime disconnect).
+            # Logger flushes CSV every episode, so copy after each checkpoint.
+            if drive_backup_dir:
+                import shutil
+                try:
+                    dst_ckpt = os.path.join(drive_backup_dir, ckpt_dir)
+                    dst_log = os.path.join(drive_backup_dir, log_dir)
+                    os.makedirs(dst_ckpt, exist_ok=True)
+                    os.makedirs(dst_log, exist_ok=True)
+                    shutil.copytree(ckpt_dir, dst_ckpt, dirs_exist_ok=True)
+                    shutil.copytree(log_dir, dst_log, dirs_exist_ok=True)
+                except Exception as e:
+                    print(f"[drive-backup] WARN: {e}")
             next_checkpoint_step += checkpoint_interval
 
         # Best model
@@ -557,6 +571,20 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     # Final checkpoint
     if hasattr(agent, 'save'):
         agent.save(os.path.join(ckpt_dir, "checkpoint_final.pt"))
+
+    # Final Drive mirror
+    if drive_backup_dir:
+        import shutil
+        try:
+            dst_ckpt = os.path.join(drive_backup_dir, ckpt_dir)
+            dst_log = os.path.join(drive_backup_dir, log_dir)
+            os.makedirs(dst_ckpt, exist_ok=True)
+            os.makedirs(dst_log, exist_ok=True)
+            shutil.copytree(ckpt_dir, dst_ckpt, dirs_exist_ok=True)
+            shutil.copytree(log_dir, dst_log, dirs_exist_ok=True)
+            print(f"[drive-backup] final mirror -> {drive_backup_dir}")
+        except Exception as e:
+            print(f"[drive-backup] final WARN: {e}")
 
     # Save final metrics summary
     elapsed = time.time() - start_time
@@ -610,6 +638,9 @@ def main():
     parser.add_argument("--disagreement-type", type=str, default=None,
                         choices=["divergent", "constant"],
                         help="Disagreement utility type: 'divergent' (Eq 32) or 'constant' (D_i=kappa)")
+    parser.add_argument("--drive-backup-dir", type=str, default=None,
+                        help="If set, mirror checkpoints+logs here every checkpoint interval. "
+                             "Use /content/drive/MyDrive/hcmarl_backup on Colab to survive runtime disconnects.")
     args = parser.parse_args()
 
     # Load config
@@ -673,7 +704,8 @@ def main():
     cfg["allocation_interval"] = args.allocation_interval
 
     train(cfg, args.method, args.seed, device, args.resume, mmicrl_results, mmicrl_model,
-          ecbf_mode=ecbf_mode, use_nswf=use_nswf, disagreement_type=disagreement_type)
+          ecbf_mode=ecbf_mode, use_nswf=use_nswf, disagreement_type=disagreement_type,
+          drive_backup_dir=args.drive_backup_dir)
 
 
 if __name__ == "__main__":
