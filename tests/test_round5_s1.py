@@ -314,7 +314,9 @@ class TestS38:
         """evaluate.py must use 0.5 as conservative default for missing theta."""
         with open("scripts/evaluate.py") as f:
             content = f.read()
-        assert 'theta = 0.5' in content or 'theta = env.theta_max.get(m, 0.5)' in content, \
+        assert ('theta = 0.5' in content
+                or 'theta = env.theta_max.get(m, 0.5)' in content
+                or 'worker_theta.get(m, 0.5)' in content), \
             "S-38: must use conservative default theta=0.5"
 
     def test_sai_computed_in_evaluate(self):

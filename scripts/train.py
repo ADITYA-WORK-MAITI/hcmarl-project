@@ -214,9 +214,12 @@ def run_mmicrl_pretrain(cfg, log_dir="logs"):
 def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmicrl_model=None,
           ecbf_mode="on", use_nswf=True, disagreement_type="divergent"):
     """Full training loop with logging and checkpointing."""
-    # Setup
-    torch.manual_seed(seed)
-    np.random.seed(seed)
+    # Full seeding: numpy, torch (CPU+CUDA), cudnn.deterministic, PYTHONHASHSEED.
+    # Python stdlib random is seeded too — MMICRL / allocator internals may use it.
+    import random as _random
+    from hcmarl.utils import seed_everything
+    seed_everything(seed)
+    _random.seed(seed)
 
     env_cfg = cfg.get("environment", {})
     train_cfg = cfg.get("training", {})
@@ -434,7 +437,7 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
                         log_prob=log_probs.get(agent_id, 0.0),
                         reward=rewards[agent_id],
                         done=float(terms[agent_id]),
-                        value=value,
+                        values=value,
                     )
             elif is_lagrangian:
                 # MAPPO-Lagrangian or SafePO fallback: store with cost
@@ -446,8 +449,8 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
                         reward=rewards[agent_id],
                         cost=step_cost,
                         done=float(terms[agent_id]),
-                        value=value,
-                        cost_value=cost_value,
+                        values=value,
+                        cost_values=cost_value,
                     )
             elif is_ippo:
                 # IPPO: per-agent buffer storage
@@ -470,7 +473,7 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
                         log_prob=log_probs.get(agent_id, 0.0),
                         reward=rewards[agent_id],
                         done=float(terms[agent_id]),
-                        value=value,
+                        values=value,
                     )
 
             obs = next_obs
@@ -655,7 +658,10 @@ def main():
     mmicrl_results = None
     mmicrl_model = None
     if run_mmicrl:
-        mmicrl_results, mmicrl_model = run_mmicrl_pretrain(cfg)
+        # Write MMICRL artifacts under per-seed log dir so concurrent
+        # seeds (5 Colab accounts) don't overwrite each other's results.
+        mmicrl_log_dir = os.path.join("logs", args.method, f"seed_{args.seed}")
+        mmicrl_results, mmicrl_model = run_mmicrl_pretrain(cfg, log_dir=mmicrl_log_dir)
 
     # Inject CLI overrides into config
     cfg["action_mode"] = args.action_mode

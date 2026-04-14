@@ -45,5 +45,15 @@ ecbf:
   kp: 1.0             # S-27: explicit (calibrated in C-2, default=1.0)
 
 logging:
-  use_wandb: true
+  use_wandb: false
   project_name: "hcmarl-neurips2026"
+
+mmicrl:
+  enabled: true
+  n_types: 3
+  n_iterations: 150
+  n_episodes_per_worker: 3
+  lambda1: 1.0
+  lambda2: 1.0
+  hidden_dims: [64, 64]
+  use_fixed_theta: false

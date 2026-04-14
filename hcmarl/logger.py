@@ -29,7 +29,8 @@ class HCMARLLogger:
         "tasks_completed", "cumulative_reward", "jain_fairness",
         "peak_fatigue", "forced_rest_rate", "constraint_recovery_time",
         "safety_autonomy_index", "ecbf_interventions",
-        "lambda", "policy_loss", "value_loss", "entropy",
+        "lambda", "actor_loss", "critic_loss", "cost_critic_loss",
+        "policy_loss", "value_loss", "entropy",
     ])
 
     def __init__(self, log_dir="logs", use_wandb=False, wandb_project="hcmarl",

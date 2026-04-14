@@ -64,7 +64,20 @@ ecbf:
   kp: 1.0
 
 logging:
-  use_wandb: true
+  use_wandb: false
   project_name: "hcmarl-neurips2026"
   log_interval: 10
   save_interval: 50
+
+# MMICRL CFDE type discovery (math doc Sec 4, Remark 7.2).
+# Pre-trains on WSD4FEDSRM calibrated profiles; per-type theta_max
+# thresholds are injected into the env before RL begins.
+mmicrl:
+  enabled: true
+  n_types: 3
+  n_iterations: 150
+  n_episodes_per_worker: 3
+  lambda1: 1.0
+  lambda2: 1.0
+  hidden_dims: [64, 64]
+  use_fixed_theta: false

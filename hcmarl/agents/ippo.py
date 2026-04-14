@@ -57,7 +57,7 @@ class IPPO:
             log_probs_dict={aid: log_prob},
             rewards_dict={aid: reward},
             done=done,
-            value=value,
+            values=value,
         )
 
     def update(self):

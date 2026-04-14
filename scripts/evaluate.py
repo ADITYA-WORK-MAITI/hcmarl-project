@@ -3,6 +3,10 @@ HC-MARL Phase 4 (#55): Evaluation Script
 ==========================================
 Load trained checkpoint, run N episodes, compute all 9 HC-MARL metrics.
 
+Reconstructs the SAME environment the agent was trained in by reading
+the saved config.yaml from the training log directory (which includes
+MMICRL results, ablation flags, and muscle overrides).
+
 Usage:
     python scripts/evaluate.py --checkpoint checkpoints/hcmarl/seed_0/checkpoint_final.pt \
         --config config/hcmarl_full_config.yaml --method hcmarl --n-episodes 100
@@ -12,38 +16,106 @@ import argparse
 import os
 import sys
 import json
+import warnings
 import numpy as np
 import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hcmarl.envs.pettingzoo_wrapper import WarehousePettingZoo
+from hcmarl.agents.ippo import IPPO
 from hcmarl.logger import HCMARLLogger
+from hcmarl.utils import seed_everything
 from scripts.train import create_agent
 import yaml
 
 
-def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"):
-    """Run evaluation and compute all 9 metrics."""
-    torch.manual_seed(seed)
-    np.random.seed(seed)
+def _build_eval_env(cfg, mmicrl_results=None, method="hcmarl"):
+    """Build evaluation env that matches the training env exactly.
 
+    Reads the same config keys as train.py to ensure:
+    - ecbf_mode matches (on/off for no_ecbf ablation)
+    - disagreement_type matches (constant for no_divergent ablation)
+    - muscle_params_override matches (r=1 for no_reperfusion ablation)
+    - theta_max matches (MMICRL-derived per-worker thresholds for hcmarl)
+    """
     env_cfg = cfg.get("environment", {})
     n_workers = env_cfg.get("n_workers", 6)
     max_steps = env_cfg.get("max_steps", 480)
 
-    env = WarehousePettingZoo(n_workers=n_workers, max_steps=max_steps,
-                               theta_max=env_cfg.get("theta_max", None))
+    ecbf_cfg = cfg.get("ecbf", {})
+    ecbf_mode = "off" if not ecbf_cfg.get("enabled", True) else "on"
+
+    disagree_cfg = cfg.get("disagreement", {})
+    disagreement_type = disagree_cfg.get("type", "divergent")
+
+    muscle_params_override = None
+    muscle_groups_cfg = env_cfg.get("muscle_groups")
+    if muscle_groups_cfg:
+        muscle_params_override = {}
+        for m_name, m_params in muscle_groups_cfg.items():
+            muscle_params_override[m_name] = {
+                k: v for k, v in m_params.items() if k in ("F", "R", "r")
+            }
+
+    theta_max = env_cfg.get("theta_max", None)
+    if mmicrl_results and method == "hcmarl":
+        theta_per_type = mmicrl_results.get("theta_per_type", {})
+        type_proportions = mmicrl_results.get("type_proportions", [])
+        if theta_per_type:
+            type_keys = sorted(theta_per_type.keys(), key=lambda k: int(k))
+            n_types = len(type_keys)
+            theta_max = {}
+            if type_proportions and len(type_proportions) == n_types:
+                counts = np.round(np.array(type_proportions) * n_workers).astype(int)
+                diff = n_workers - counts.sum()
+                counts[np.argmax(counts)] += diff
+                worker_type_map = []
+                for t_idx, count in enumerate(counts):
+                    worker_type_map.extend([t_idx] * count)
+                for w in range(n_workers):
+                    type_k = type_keys[worker_type_map[w]]
+                    theta_max[f"worker_{w}"] = theta_per_type[type_k]
+            else:
+                conservative = {}
+                for type_k in type_keys:
+                    for muscle, val in theta_per_type[type_k].items():
+                        if muscle not in conservative or val < conservative[muscle]:
+                            conservative[muscle] = val
+                theta_max = {f"worker_{w}": dict(conservative) for w in range(n_workers)}
+
+    env = WarehousePettingZoo(
+        n_workers=n_workers, max_steps=max_steps,
+        theta_max=theta_max, ecbf_mode=ecbf_mode,
+        disagreement_type=disagreement_type,
+        muscle_params_override=muscle_params_override,
+    )
+    return env
+
+
+def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"):
+    """Run evaluation and compute all 9 metrics."""
+    import random as _random
+    seed_everything(seed)
+    _random.seed(seed)
+
+    mmicrl_results = cfg.get("mmicrl_results", None)
+    env = _build_eval_env(cfg, mmicrl_results=mmicrl_results, method=method)
+
+    n_workers = env.n_workers
+    max_steps = env.max_steps
     obs_dim = env.obs_dim
     global_obs_dim = env.global_obs_dim
     n_actions = env.n_tasks
 
+    is_ippo = (method == "ippo")
     agent = create_agent(method, obs_dim, global_obs_dim, n_actions, n_workers, cfg, device)
     if checkpoint_path and os.path.exists(checkpoint_path):
         agent.load(checkpoint_path)
         print(f"Loaded checkpoint: {checkpoint_path}")
 
     all_metrics = {k: [] for k in HCMARLLogger.METRIC_NAMES}
+    all_metrics["safety_autonomy_index"] = []
 
     for ep in range(n_episodes):
         obs, _ = env.reset()
@@ -61,7 +133,10 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
 
         for step in range(max_steps):
             global_state = env._get_global_obs()
-            result = agent.get_actions(obs, global_state)
+            if is_ippo:
+                result = agent.get_actions(obs)
+            else:
+                result = agent.get_actions(obs, global_state)
             actions = result[0] if isinstance(result, tuple) else result
 
             obs, rewards, terms, truncs, infos = env.step(actions)
@@ -71,16 +146,11 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
             for i, (agent_id, info) in enumerate(sorted(infos.items())):
                 fatigue = info.get("fatigue", {})
                 task = info.get("task", "rest")
+                worker_theta = env.theta_max_per_worker[i]
                 for m, mf in fatigue.items():
-                    # S-38: conservative default 0.5 with warning, not silent 1.0
-                    theta = env.theta_max.get(m, None)
-                    if theta is None:
-                        import warnings
-                        warnings.warn(
-                            f"theta_max missing for muscle '{m}', using conservative 0.5",
-                            UserWarning, stacklevel=2,
-                        )
-                        theta = 0.5
+                    if m not in worker_theta:
+                        warnings.warn(f"theta_max missing for muscle '{m}', using conservative default 0.5")
+                    theta = worker_theta.get(m, 0.5)
                     if mf > theta:
                         step_violations += 1
                         if not in_violation[i]:
@@ -93,12 +163,10 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
                     peak_mf = max(peak_mf, mf)
                 if task != "rest":
                     tasks_per_worker[i] += 1
-                # S-22: forced rest = ECBF safety filter actually intervened
                 ecbf_int = info.get("ecbf_interventions", 0)
                 total_ecbf_interventions += ecbf_int
                 if ecbf_int > 0:
                     forced_rests += 1
-                # S-23: count only muscles with nonzero task demand
                 if task != "rest":
                     demands = env.task_mgr.get_demand_vector(task)
                     total_ecbf_opportunities += int((demands > 0).sum())
@@ -124,11 +192,11 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
         all_metrics["peak_fatigue"].append(peak_mf)
         all_metrics["forced_rest_rate"].append(forced_rests / max(1, n_steps * n_workers))
         all_metrics["constraint_recovery_time"].append(np.mean(recovery_times) if recovery_times else 0.0)
+        all_metrics["safety_autonomy_index"].append(sai)
 
         if (ep + 1) % 20 == 0:
             print(f"  Episode {ep+1}/{n_episodes}: R={total_reward:.1f}, Safe={safe_steps/n_steps:.2%}")
 
-    # Compute mean ± std
     results = {}
     for k, vals in all_metrics.items():
         results[f"{k}_mean"] = float(np.mean(vals))
@@ -156,16 +224,26 @@ def main():
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
+    # If a training config.yaml was saved alongside the checkpoint (by train.py),
+    # load it instead — it contains MMICRL results and the exact env settings.
+    ckpt_dir = os.path.dirname(args.checkpoint)
+    log_dir = ckpt_dir.replace("checkpoints", "logs")
+    saved_cfg_path = os.path.join(log_dir, "config.yaml")
+    if os.path.exists(saved_cfg_path):
+        print(f"Loading training config from {saved_cfg_path}")
+        with open(saved_cfg_path) as f:
+            cfg = yaml.safe_load(f)
+
     results = evaluate(cfg, args.method, args.checkpoint, args.n_episodes, args.seed, args.device)
 
-    # Print results
     print(f"\n{'='*60}")
     print(f"Evaluation Results: {args.method} (seed {args.seed})")
     print(f"{'='*60}")
     for k in HCMARLLogger.METRIC_NAMES:
         print(f"  {k:30s}: {results[f'{k}_mean']:8.4f} +/- {results[f'{k}_std']:8.4f}")
+    if "safety_autonomy_index_mean" in results:
+        print(f"  {'safety_autonomy_index':30s}: {results['safety_autonomy_index_mean']:8.4f} +/- {results['safety_autonomy_index_std']:8.4f}")
 
-    # Save
     out_path = args.output or f"results/{args.method}_seed{args.seed}_eval.json"
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as f:

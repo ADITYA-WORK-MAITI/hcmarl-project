@@ -70,5 +70,5 @@ disagreement:
 ablation: "no_divergent"
 
 logging:
-  use_wandb: true
+  use_wandb: false
   project_name: "hcmarl-neurips2026"
