@@ -35,7 +35,8 @@ class HCMARLAgent:
                  theta_max=None, ecbf_params=None, use_nswf=True,
                  action_mode="discrete", n_muscles=None,
                  welfare_type="nswf", nswf_params=None,
-                 allocation_interval=30, device="cpu"):
+                 allocation_interval=30, device="cpu",
+                 **mappo_kwargs):
         """
         Args:
             obs_dim: Per-agent observation dimension.
@@ -72,9 +73,10 @@ class HCMARLAgent:
         else:
             self.allocator = None
 
-        # MAPPO policy
+        # MAPPO policy — forward algorithm hyperparams from config
         self.mappo = MAPPO(
-            obs_dim, global_obs_dim, n_actions, n_agents, device=device
+            obs_dim, global_obs_dim, n_actions, n_agents, device=device,
+            **mappo_kwargs
         )
 
         # In continuous mode, replace the discrete actor with Gaussian

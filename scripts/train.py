@@ -78,6 +78,10 @@ def create_agent(method, obs_dim, global_obs_dim, n_actions, n_agents, cfg, devi
             nswf_params=nswf_params,
             allocation_interval=allocation_interval,
             device=device,
+            lr_actor=lr_actor, lr_critic=lr_critic,
+            gamma=gamma, gae_lambda=gae_lambda, clip_eps=clip_eps,
+            entropy_coeff=entropy_coeff, max_grad_norm=max_grad_norm,
+            n_epochs=n_epochs, batch_size=batch_size,
         )
     elif method == "mappo":
         return MAPPO(

@@ -1114,4 +1114,38 @@ python -m pytest tests/ -q --tb=short   # 416 passed, 1 skipped, 0 failed (144.7
 
 ---
 
+## 2026-04-14 | ~23:00 IST — Phase B Pre-flight Audit: 5 Bug Fixes + Full Smoke Test
+
+Exhaustive pre-training audit of the entire codebase before Phase B (75 training runs on Colab). Read all ~10,000 lines of source code, all 15 configs, all 4 notebooks, and the full 15-page math document. Found and fixed 5 new bugs:
+
+BUG-A (Critical): evaluate.py built the wrong environment for ablation experiments — missing ecbf_mode, disagreement_type, and muscle_params_override. All ablation evaluation results would have been scientifically invalid. Complete rewrite of evaluate.py with _build_eval_env() that reads the same config keys as train.py, plus loading saved training config.yaml from the logs directory.
+
+BUG-B: evaluate.py had incomplete seeding (only torch+numpy, not seed_everything+random).
+
+BUG-C: CSV logger silently dropped training loss columns. The CSV_COLUMNS list had "policy_loss"/"value_loss" but agents return "actor_loss"/"critic_loss"/"cost_critic_loss" — extrasaction="ignore" silently dropped them, so NO loss curves would appear in CSVs.
+
+BUG-D: All 4 Colab notebooks had wandb.login() cells that would cause interactive hang.
+
+BUG-E: Notebook eval cells used wrong config for scaling experiments (always hcmarl_full_config.yaml instead of the correct scaling config).
+
+Also applied prior session's fixes: ippo.py store_transition kwarg (value->values), train.py kwarg fixes (value->values, cost_value->cost_values), added mmicrl sections to all scaling configs, added warnings.warn for missing theta_max in evaluate.py.
+
+Ran end-to-end smoke test of all 13 training paths (4 methods + 5 ablations + 4 scaling configs) through 2 episodes each — all 13 pass with no crashes. Test suite: 416 passed, 1 skipped, 0 failed.
+
+**Commands executed (in order):**
+```
+python -m pytest tests/ -x -q --tb=short   # 1 fail (test_warning_on_missing_theta)
+# Fixed: added import warnings + warnings.warn to evaluate.py
+python -m pytest tests/ -x -q --tb=short   # 416 passed, 1 skipped (258s)
+# Smoke test: all 13 paths x 2 episodes
+python -c "... smoke test script ..."       # 13/13 PASS
+git add [21 files]
+git commit
+```
+
+**Commit:** `ff67965` — 2026-04-14 23:00 IST
+**Files changed:** 21 (evaluate.py rewrite, logger.py, ippo.py, train.py, 11 configs, 4 notebooks, test, setup.py) | **Tests:** 416 passed, 1 skipped, 0 failed
+
+---
+
 <!-- APPEND NEW ENTRIES BELOW THIS LINE -->
