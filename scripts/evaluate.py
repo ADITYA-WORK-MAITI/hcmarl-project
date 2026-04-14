@@ -84,11 +84,16 @@ def _build_eval_env(cfg, mmicrl_results=None, method="hcmarl"):
                             conservative[muscle] = val
                 theta_max = {f"worker_{w}": dict(conservative) for w in range(n_workers)}
 
+    ecbf_alpha1 = ecbf_cfg.get("alpha1", 0.05)
+    ecbf_alpha2 = ecbf_cfg.get("alpha2", 0.05)
+    ecbf_alpha3 = ecbf_cfg.get("alpha3", 0.1)
+
     env = WarehousePettingZoo(
         n_workers=n_workers, max_steps=max_steps,
         theta_max=theta_max, ecbf_mode=ecbf_mode,
         disagreement_type=disagreement_type,
         muscle_params_override=muscle_params_override,
+        ecbf_alpha1=ecbf_alpha1, ecbf_alpha2=ecbf_alpha2, ecbf_alpha3=ecbf_alpha3,
     )
     return env
 

@@ -73,22 +73,25 @@ def test_demo_features_shape():
     print("  PASS: test_demo_features_shape")
 
 def test_mmicrl_fit():
-    """MMICRL fits on Path G demos and returns valid results."""
+    """MMICRL fits on Path G demos and returns valid results with BIC selection."""
     collector, _ = _make_pathg_collector(n_episodes=3)
-    mmicrl = MMICRL(n_types=3, lambda1=1.0, lambda2=1.0, n_muscles=1)
+    mmicrl = MMICRL(n_types=3, lambda1=1.0, lambda2=1.0, n_muscles=1, auto_select_k=True)
     results = mmicrl.fit(collector)
 
     assert "mutual_information" in results
     assert results["mutual_information"] >= 0
-    assert len(results["theta_per_type"]) == 3
-    assert len(results["type_proportions"]) == 3
+    k = results["n_types_discovered"]
+    assert 1 <= k <= 5
+    assert len(results["theta_per_type"]) == k
+    assert len(results["type_proportions"]) == k
     assert abs(sum(results["type_proportions"]) - 1.0) < 1e-6
-    print("  PASS: test_mmicrl_fit")
+    assert "bic_scores" in results
+    print(f"  PASS: test_mmicrl_fit (BIC selected K={k})")
 
 def test_mmicrl_lambda_equality():
     """When lambda1 = lambda2, objective should equal lambda*I(tau;z)."""
     collector, _ = _make_pathg_collector(n_episodes=3)
-    mmicrl = MMICRL(n_types=3, lambda1=2.0, lambda2=2.0, n_muscles=1)
+    mmicrl = MMICRL(n_types=3, lambda1=2.0, lambda2=2.0, n_muscles=1, auto_select_k=False)
     results = mmicrl.fit(collector)
 
     expected = 2.0 * results["mutual_information"]
@@ -99,7 +102,7 @@ def test_mmicrl_lambda_equality():
 def test_mmicrl_type_assignment():
     """Worker type assignment returns valid thresholds from Path G demos."""
     collector, _ = _make_pathg_collector(n_episodes=3)
-    mmicrl = MMICRL(n_types=3, n_muscles=1)
+    mmicrl = MMICRL(n_types=3, n_muscles=1, auto_select_k=False)
     mmicrl.fit(collector)
 
     n_steps = 10
@@ -115,7 +118,7 @@ def test_mmicrl_type_assignment():
 def test_mmicrl_discovers_types():
     """Fast vs slow fatiguers should produce distinct thresholds."""
     collector, _ = _make_pathg_collector(n_episodes=5)
-    mmicrl = MMICRL(n_types=3, n_muscles=1)
+    mmicrl = MMICRL(n_types=3, n_muscles=1, auto_select_k=False)
     results = mmicrl.fit(collector)
 
     thetas = [results["theta_per_type"][k]["shoulder"] for k in range(3)]
@@ -221,7 +224,7 @@ def test_cfde_type_recovery():
     collector, _ = _make_pathg_collector(n_episodes=10)
     # Ground truth: workers 0-2 are fast, 3-5 medium, 6-8 slow
     gt_types = np.array([wid // 3 for wid in collector.worker_ids])
-    mmicrl = MMICRL(n_types=3, lambda1=1.0, lambda2=1.0, n_muscles=1, n_iterations=150)
+    mmicrl = MMICRL(n_types=3, lambda1=1.0, lambda2=1.0, n_muscles=1, n_iterations=150, auto_select_k=False)
     results = mmicrl.fit(collector)
     pred_types = mmicrl.type_assignments
     best_acc = 0.0

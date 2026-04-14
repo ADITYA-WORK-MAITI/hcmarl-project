@@ -180,6 +180,8 @@ def run_mmicrl_pretrain(cfg, log_dir="logs"):
     collector = load_path_g_into_collector(demos, worker_ids)
 
     # Fit MMICRL (single-muscle shoulder calibration -> n_muscles=1)
+    auto_select_k = mmicrl_cfg.get("auto_select_k", True)
+    k_range = tuple(mmicrl_cfg.get("k_range", [1, 5]))
     mmicrl = MMICRL(
         n_types=n_types,
         lambda1=mmicrl_cfg.get("lambda1", 1.0),
@@ -187,6 +189,8 @@ def run_mmicrl_pretrain(cfg, log_dir="logs"):
         n_muscles=1,
         n_iterations=mmicrl_cfg.get("n_iterations", 150),
         hidden_dims=mmicrl_cfg.get("hidden_dims", [64, 64]),
+        auto_select_k=auto_select_k,
+        k_range=k_range,
     )
     results = mmicrl.fit(collector)
 
@@ -236,21 +240,21 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     checkpoint_interval = train_cfg.get("checkpoint_interval", 100_000)
     n_eval_episodes = train_cfg.get("n_eval_episodes", 10)
 
-    # If MMICRL discovered thresholds, inject them into config
-    theta_max = env_cfg.get("theta_max", None)
+    # If MMICRL discovered thresholds, inject them into config.
+    # Clamp each MMICRL theta to be at least as large as the config default
+    # to avoid structurally infeasible constraints (MMICRL discovers thresholds
+    # from demo data which may be lower than what the env dynamics allow).
+    config_theta_defaults = env_cfg.get("theta_max", {})
+    theta_max = config_theta_defaults
     if mmicrl_results and method == "hcmarl":
         theta_per_type = mmicrl_results.get("theta_per_type", {})
         type_proportions = mmicrl_results.get("type_proportions", [])
         if theta_per_type:
             type_keys = sorted(theta_per_type.keys(), key=lambda k: int(k))
             n_types = len(type_keys)
-            # Proportional assignment: distribute workers according to
-            # discovered type proportions (not round-robin)
             theta_max = {}
             if type_proportions and len(type_proportions) == n_types:
-                # Assign workers proportionally to type prevalence
                 counts = np.round(np.array(type_proportions) * n_workers).astype(int)
-                # Fix rounding so total == n_workers
                 diff = n_workers - counts.sum()
                 counts[np.argmax(counts)] += diff
                 worker_type_map = []
@@ -258,16 +262,23 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
                     worker_type_map.extend([t_idx] * count)
                 for w in range(n_workers):
                     type_k = type_keys[worker_type_map[w]]
-                    theta_max[f"worker_{w}"] = theta_per_type[type_k]
+                    raw_theta = theta_per_type[type_k]
+                    clamped = {}
+                    for muscle, val in raw_theta.items():
+                        floor = config_theta_defaults.get(muscle, 0.3)
+                        clamped[muscle] = max(val, floor)
+                    theta_max[f"worker_{w}"] = clamped
             else:
-                # Fallback: assign most conservative (lowest) thresholds
                 conservative = {}
                 for type_k in type_keys:
                     for muscle, val in theta_per_type[type_k].items():
-                        if muscle not in conservative or val < conservative[muscle]:
-                            conservative[muscle] = val
+                        floor = config_theta_defaults.get(muscle, 0.3)
+                        clamped_val = max(val, floor)
+                        if muscle not in conservative or clamped_val < conservative[muscle]:
+                            conservative[muscle] = clamped_val
                 theta_max = {f"worker_{w}": dict(conservative) for w in range(n_workers)}
             print(f"Using MMICRL-learned thresholds for {n_workers} workers ({n_types} types, proportional assignment)")
+            print(f"  (clamped to config floor: {dict(config_theta_defaults)})")
 
     # Directories
     run_name = f"{method}_seed{seed}"
@@ -293,6 +304,12 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
                 k: v for k, v in m_params.items() if k in ("F", "R", "r")
             }
 
+    # ECBF alphas from config (previously hardcoded, now configurable)
+    ecbf_cfg = cfg.get("ecbf", {})
+    ecbf_alpha1 = ecbf_cfg.get("alpha1", 0.05)
+    ecbf_alpha2 = ecbf_cfg.get("alpha2", 0.05)
+    ecbf_alpha3 = ecbf_cfg.get("alpha3", 0.1)
+
     # Environment
     env = WarehousePettingZoo(
         n_workers=n_workers, max_steps=max_steps,
@@ -300,6 +317,7 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
         action_mode=env_action_mode,
         disagreement_type=disagreement_type,
         muscle_params_override=muscle_params_override,
+        ecbf_alpha1=ecbf_alpha1, ecbf_alpha2=ecbf_alpha2, ecbf_alpha3=ecbf_alpha3,
     )
     obs_dim = env.obs_dim
     global_obs_dim = env.global_obs_dim
@@ -430,8 +448,8 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
             if step_violations == 0:
                 safe_steps += 1
 
-            # Store transitions based on agent type
-            step_cost = float(step_violations > 0)
+            # Dense cost for Lagrangian: sum of per-agent costs from env
+            step_cost = sum(infos[a].get("cost", 0.0) for a in sorted(infos.keys())) / max(1, n_workers)
 
             if is_hcmarl and hasattr(agent.mappo, 'buffer'):
                 # HCMARLAgent wraps MAPPO — store obs used to SELECT action

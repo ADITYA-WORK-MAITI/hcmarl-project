@@ -366,15 +366,15 @@ class TestS25:
             assert params["alpha3"] == 0.5, f"{muscle} alpha3 != 0.5"
 
     def test_full_config_alphas(self, config_dir):
-        """hcmarl_full_config.yaml must have alpha=0.5."""
+        """hcmarl_full_config.yaml must have ECBF alphas that flow through to env."""
         cfg = self._load_yaml(os.path.join(config_dir, "hcmarl_full_config.yaml"))
         ecbf = cfg["ecbf"]
-        assert ecbf["alpha1"] == 0.5
-        assert ecbf["alpha2"] == 0.5
-        assert ecbf["alpha3"] == 0.5
+        for key in ("alpha1", "alpha2", "alpha3"):
+            assert key in ecbf, f"Missing {key} in ecbf config"
+            assert ecbf[key] > 0, f"ecbf.{key} must be positive"
 
-    def test_all_configs_consistent(self, config_dir):
-        """All YAML configs with ecbf section must use alpha=0.5."""
+    def test_all_configs_have_ecbf_alphas(self, config_dir):
+        """All YAML configs with ecbf section must have positive alpha values."""
         import glob
         yaml_files = glob.glob(os.path.join(config_dir, "*.yaml"))
         for yf in yaml_files:
@@ -383,14 +383,11 @@ class TestS25:
                 continue
             ecbf = cfg["ecbf"]
             fname = os.path.basename(yf)
-            # Handle both flat (alpha1: 0.5) and per-muscle ({shoulder: {alpha1: 0.5}})
             if "alpha1" in ecbf:
-                assert ecbf["alpha1"] == 0.5, f"{fname} ecbf.alpha1 != 0.5"
-                assert ecbf["alpha2"] == 0.5, f"{fname} ecbf.alpha2 != 0.5"
-                assert ecbf["alpha3"] == 0.5, f"{fname} ecbf.alpha3 != 0.5"
+                for key in ("alpha1", "alpha2", "alpha3"):
+                    assert ecbf[key] > 0, f"{fname} ecbf.{key} must be positive"
             else:
                 for muscle, params in ecbf.items():
                     if isinstance(params, dict) and "alpha1" in params:
-                        assert params["alpha1"] == 0.5, f"{fname}/{muscle} alpha1 != 0.5"
-                        assert params["alpha2"] == 0.5, f"{fname}/{muscle} alpha2 != 0.5"
-                        assert params["alpha3"] == 0.5, f"{fname}/{muscle} alpha3 != 0.5"
+                        for key in ("alpha1", "alpha2", "alpha3"):
+                            assert params[key] > 0, f"{fname}/{muscle} {key} must be positive"

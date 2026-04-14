@@ -17,7 +17,8 @@ class WarehousePettingZoo:
     def __init__(self, n_workers=4, muscle_groups=None, tasks=None, theta_max=None,
                  dt=1.0, max_steps=480, kappa=1.0, ecbf_mode="on",
                  action_mode="discrete", disagreement_type="divergent",
-                 muscle_params_override=None):
+                 muscle_params_override=None,
+                 ecbf_alpha1=0.05, ecbf_alpha2=0.05, ecbf_alpha3=0.1):
         """
         Args:
             action_mode: "discrete" (default) — agent selects a task index.
@@ -102,10 +103,9 @@ class WarehousePettingZoo:
         self.theta_max = self.theta_max_per_worker[0]
 
         # C-6.A: Build per-worker, per-muscle ECBFFilter instances
-        # Replaces inlined analytical bounds with the canonical filter.
-        ecbf_alpha1 = 0.05
-        ecbf_alpha2 = 0.05
-        ecbf_alpha3 = 0.1
+        ecbf_alpha1 = ecbf_alpha1
+        ecbf_alpha2 = ecbf_alpha2
+        ecbf_alpha3 = ecbf_alpha3
         self.ecbf_filters = {}  # {worker_idx: {muscle_name: ECBFFilter}}
         for i in range(n_workers):
             self.ecbf_filters[i] = {}

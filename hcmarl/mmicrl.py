@@ -658,8 +658,12 @@ class MMICRL:
         n_iterations: int = 100,
         hidden_dims: Optional[List[int]] = None,
         device: str = 'cpu',
+        auto_select_k: bool = False,
+        k_range: Optional[tuple] = None,
     ):
         self.n_types = n_types
+        self.auto_select_k = auto_select_k
+        self.k_range = k_range or (1, 5)
         # Remark 4.4 (Mathematical Modelling, Section 4): lambda1 = lambda2
         # yields pure MI maximisation (Eq 11). When lambda1 != lambda2, the
         # residual H[pi(tau)] term requires joint entropy estimation which is
@@ -934,17 +938,65 @@ class MMICRL:
 
         return theta_per_type
 
+    def _compute_bic(self, step_features, traj_indices, n_demos, k):
+        """Compute BIC for a given K using a fresh CFDE.
+
+        BIC = -2 * log_likelihood + n_params * log(n_samples)
+        Lower BIC = better model. Used for data-driven K selection.
+        """
+        total_steps, feat_dim = step_features.shape
+        features_norm = (step_features - step_features.mean(axis=0)) / (step_features.std(axis=0) + 1e-8)
+
+        cfde_k = CFDE(
+            input_dim=feat_dim, n_types=k,
+            hidden_dims=self.hidden_dims, device=self.device,
+        )
+        x = torch.tensor(features_norm, dtype=torch.float32, device=self.device)
+        t_idx = torch.tensor(traj_indices, dtype=torch.long, device=self.device)
+        optimizer = torch.optim.Adam(cfde_k.parameters(), lr=self.lr)
+
+        traj_summary = np.zeros((n_demos, feat_dim), dtype=np.float32)
+        for i in range(n_demos):
+            mask = traj_indices == i
+            if mask.any():
+                traj_summary[i] = features_norm[mask].mean(axis=0)
+        traj_assignments = cfde_k._kmeans_init(traj_summary)
+        step_assignments = traj_assignments[traj_indices]
+        z_onehot = torch.nn.functional.one_hot(
+            torch.tensor(step_assignments, device=self.device), k
+        ).float()
+
+        batch_size = min(256, total_steps)
+        n_bic_iters = min(50, self.n_iterations)
+        for epoch in range(n_bic_iters):
+            cfde_k.flow.train()
+            perm = torch.randperm(total_steps, device=self.device)
+            for i in range(0, total_steps, batch_size):
+                idx = perm[i:i + batch_size]
+                log_p = cfde_k.log_prob(x[idx], z_onehot[idx])
+                loss = -log_p.mean()
+                optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(cfde_k.parameters(), 1.0)
+                optimizer.step()
+
+        cfde_k.flow.eval()
+        with torch.no_grad():
+            log_lik = cfde_k.log_prob(x, z_onehot).sum().item()
+
+        n_params = sum(p.numel() for p in cfde_k.parameters())
+        bic = -2.0 * log_lik + n_params * np.log(total_steps)
+        return bic
+
     def fit(self, collector: DemonstrationCollector, n_actions: Optional[int] = None) -> Dict[str, Any]:
         """
         Full MMICRL pipeline (Qiao et al. NeurIPS 2023):
           1. Extract per-step (s,a) features from demonstrations
-          2. Train CFDE on per-step data with trajectory-level Bayesian assignment
-          3. Compute MI objective I(τ; z) from trajectory posteriors
-          4. Learn per-type constraint boundaries via constraint networks
+          2. Select K via BIC if auto_select_k=True
+          3. Train CFDE on per-step data with trajectory-level Bayesian assignment
+          4. Compute MI objective I(tau; z) from trajectory posteriors
+          5. Learn per-type constraint boundaries
         """
-        # S-14: n_actions should be passed explicitly from the env to avoid
-        # undercounting when the rest action (highest index) never appears in
-        # demos. Auto-detect is kept as fallback but emits a warning.
         if n_actions is None:
             import warnings
             max_action = 0
@@ -962,6 +1014,23 @@ class MMICRL:
         n_demos = len(collector.demonstrations)
         step_features, traj_indices = collector.get_step_data(n_actions=n_actions)
 
+        # Data-driven K selection via BIC (replaces hardcoded n_types)
+        if self.auto_select_k and n_demos >= 6:
+            k_min, k_max = self.k_range
+            k_max = min(k_max, n_demos // 2)
+            bic_scores = {}
+            print("  BIC model selection for K:")
+            for k in range(max(1, k_min), k_max + 1):
+                bic = self._compute_bic(step_features, traj_indices, n_demos, k)
+                bic_scores[k] = bic
+                print(f"    K={k}: BIC={bic:.1f}")
+            best_k = min(bic_scores, key=bic_scores.get)
+            self.n_types = best_k
+            self._bic_scores = bic_scores
+            print(f"  Selected K={best_k} (lowest BIC={bic_scores[best_k]:.1f})")
+        else:
+            self._bic_scores = {}
+
         # Type discovery via per-step CFDE with trajectory-level assignment
         assignments = self._discover_types_cfde(step_features, traj_indices, n_demos)
 
@@ -973,9 +1042,6 @@ class MMICRL:
             collector.demonstrations, assignments
         )
 
-        # Objective (Eq 11, Remark 4.4): lambda * I(tau; z)
-        # With lambda1 = lambda2 enforced in __init__, the (lambda1-lambda2)*H[pi(tau)]
-        # residual is exactly zero — no need to estimate joint trajectory entropy.
         objective = self.lambda1 * mi
 
         results = {
@@ -988,6 +1054,7 @@ class MMICRL:
             "theta_per_type": self.theta_max_per_type,
             "lambda1": self.lambda1,
             "lambda2": self.lambda2,
+            "bic_scores": self._bic_scores,
         }
 
         return results

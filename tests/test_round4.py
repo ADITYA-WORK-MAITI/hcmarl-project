@@ -178,10 +178,12 @@ class TestC15:
         from hcmarl.mmicrl import MMICRL
         collector, n = _make_pathg_collector(n_episodes=3)
         assert n == 27  # 9 workers x 3 episodes
-        mmicrl = MMICRL(n_types=3, n_muscles=1)
+        mmicrl = MMICRL(n_types=3, n_muscles=1, auto_select_k=True)
         results = mmicrl.fit(collector)
         assert results['mutual_information'] >= 0
-        assert len(results['theta_per_type']) == 3
+        k = results['n_types_discovered']
+        assert 1 <= k <= 5
+        assert len(results['theta_per_type']) == k
 
 
 # =====================================================================

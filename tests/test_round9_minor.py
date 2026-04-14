@@ -95,33 +95,33 @@ class TestM2(unittest.TestCase):
         self.assertIn("running_var", sd)
 
 
-# ── M-3: safety_cost is binary with documentation ──
+# ── M-3: safety_cost is dense (continuous) with documentation ──
 
 class TestM3(unittest.TestCase):
-    """M-3: safety_cost returns binary 0/1 and has design rationale documented."""
+    """M-3: safety_cost returns dense continuous cost proportional to violation magnitude."""
 
     def test_no_violation_returns_zero(self):
         fatigue = {"shoulder": 0.3, "ankle": 0.2}
         theta = {"shoulder": 0.7, "ankle": 0.8}
         self.assertEqual(safety_cost(fatigue, theta), 0.0)
 
-    def test_single_violation_returns_one(self):
+    def test_single_violation_returns_excess(self):
         fatigue = {"shoulder": 0.8, "ankle": 0.2}
         theta = {"shoulder": 0.7, "ankle": 0.8}
-        self.assertEqual(safety_cost(fatigue, theta), 1.0)
+        cost = safety_cost(fatigue, theta)
+        self.assertAlmostEqual(cost, 0.1, places=5)
 
-    def test_multiple_violations_still_one(self):
-        """Binary: even with all muscles violating, cost is 1.0, not > 1."""
+    def test_multiple_violations_sum_excess(self):
+        """Dense: cost = sum of max(0, MF_m - theta_m) across muscles."""
         fatigue = {"shoulder": 0.8, "ankle": 0.9, "knee": 0.7}
         theta = {"shoulder": 0.7, "ankle": 0.8, "knee": 0.6}
         cost = safety_cost(fatigue, theta)
-        self.assertEqual(cost, 1.0)
+        self.assertAlmostEqual(cost, 0.1 + 0.1 + 0.1, places=5)
 
     def test_m3_rationale_documented(self):
         """M-3 design rationale is present in the docstring."""
         source = inspect.getsource(safety_cost)
-        self.assertIn("M-3", source)
-        self.assertIn("binary", source.lower())
+        self.assertIn("Dense cost", source)
 
 
 if __name__ == "__main__":

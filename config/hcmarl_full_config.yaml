@@ -50,7 +50,7 @@ algorithm:
   gamma: 0.99
   gae_lambda: 0.95
   clip_eps: 0.2
-  entropy_coeff: 0.01
+  entropy_coeff: 0.05
   max_grad_norm: 0.5
   n_epochs: 10
   batch_size: 256
@@ -58,9 +58,9 @@ algorithm:
   critic_hidden_dim: 128
 
 ecbf:
-  alpha1: 0.5
-  alpha2: 0.5
-  alpha3: 0.5
+  alpha1: 0.05
+  alpha2: 0.05
+  alpha3: 0.1
   kp: 1.0
 
 logging:
@@ -74,7 +74,9 @@ logging:
 # thresholds are injected into the env before RL begins.
 mmicrl:
   enabled: true
-  n_types: 3
+  n_types: 3              # initial guess; overridden by BIC if auto_select_k=true
+  auto_select_k: true     # data-driven K selection via BIC over k_range
+  k_range: [1, 5]
   n_iterations: 150
   n_episodes_per_worker: 3
   lambda1: 1.0

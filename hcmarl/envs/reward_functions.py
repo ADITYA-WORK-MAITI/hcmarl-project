@@ -104,19 +104,19 @@ def safety_cost(
     fatigue_values: Dict[str, float],
     theta_max: Dict[str, float],
 ) -> float:
-    """Binary cost signal for MAPPO-Lagrangian.
+    """Dense cost signal for constrained RL (MAPPO-Lagrangian and reward shaping).
 
-    Returns 1.0 if ANY muscle exceeds its theta_max, else 0.0.
-    Used by the cost critic and Lagrangian lambda update.
+    Returns sum of max(0, MF_m - theta_max_m) across all muscles,
+    providing gradient signal proportional to how far INTO the
+    unsafe region each muscle is. Zero when all muscles are safe.
 
-    M-3: Binary (not continuous) cost is a standard design choice in
-    constrained RL (Tessler et al. 2018; Stooke et al. 2020). A continuous
-    cost (e.g. sum of max(0, MF-theta)) would provide richer gradient info
-    when multiple muscles violate simultaneously, but would require
-    recalibrating cost_limit. Acceptable for workshop paper; continuous
-    cost is future work.
+    This replaces the previous binary cost (0 or 1), which gave
+    no marginal incentive when violations were deterministic.
     """
+    cost = 0.0
     for m in fatigue_values:
-        if m in theta_max and fatigue_values[m] > theta_max[m]:
-            return 1.0
-    return 0.0
+        if m in theta_max:
+            excess = fatigue_values[m] - theta_max[m]
+            if excess > 0:
+                cost += excess
+    return cost
