@@ -168,14 +168,23 @@ class HCMARLAgent:
         state = {
             "mappo_actor": self.mappo.actor.state_dict(),
             "mappo_critic": self.mappo.critic.state_dict(),
+            "mappo_actor_optim": self.mappo.actor_optim.state_dict(),
+            "mappo_critic_optim": self.mappo.critic_optim.state_dict(),
         }
         if self.action_mode == "continuous":
             state["continuous_actor"] = self.continuous_actor.state_dict()
+            state["continuous_actor_optim"] = self.continuous_actor_optim.state_dict()
         torch.save(state, path)
 
     def load(self, path):
         ckpt = torch.load(path, map_location=self.device)
         self.mappo.actor.load_state_dict(ckpt["mappo_actor"])
         self.mappo.critic.load_state_dict(ckpt["mappo_critic"])
+        if "mappo_actor_optim" in ckpt:
+            self.mappo.actor_optim.load_state_dict(ckpt["mappo_actor_optim"])
+        if "mappo_critic_optim" in ckpt:
+            self.mappo.critic_optim.load_state_dict(ckpt["mappo_critic_optim"])
         if self.action_mode == "continuous" and "continuous_actor" in ckpt:
             self.continuous_actor.load_state_dict(ckpt["continuous_actor"])
+            if "continuous_actor_optim" in ckpt:
+                self.continuous_actor_optim.load_state_dict(ckpt["continuous_actor_optim"])

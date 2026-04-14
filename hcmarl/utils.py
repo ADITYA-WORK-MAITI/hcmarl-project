@@ -149,6 +149,73 @@ def is_positive_definite(matrix: np.ndarray) -> bool:
         return False
 
 
+def build_per_worker_theta_max(mmicrl_results, config_theta_defaults, n_workers, method):
+    """Construct per-worker theta_max dict from MMICRL results, clamped to
+    the config floor per muscle.
+
+    Single source of truth shared by train.py and evaluate.py so the env
+    built at training time and the env built at evaluation time impose
+    identical thresholds on the policy.
+
+    MMICRL may return thresholds below what the env dynamics can satisfy
+    (e.g. Path G single-muscle demos produce shoulder=0.21 while
+    theta_min_max requires >= 0.627). We clamp each learned theta up to
+    the corresponding config floor so constraints are structurally
+    feasible.
+
+    Args:
+        mmicrl_results: Dict from MMICRL.fit() with 'theta_per_type' and
+            'type_proportions', or None.
+        config_theta_defaults: Dict {muscle: float} from config.environment.theta_max.
+        n_workers: Number of workers.
+        method: Only 'hcmarl' uses MMICRL thresholds; other methods get
+            the flat config dict.
+
+    Returns:
+        Either a per-worker dict {'worker_0': {muscle: theta}, ...}
+        clamped to floors, or the flat config_theta_defaults for non-hcmarl
+        methods, or config_theta_defaults when MMICRL produced nothing.
+    """
+    if method != "hcmarl" or not mmicrl_results:
+        return config_theta_defaults
+
+    theta_per_type = mmicrl_results.get("theta_per_type", {})
+    type_proportions = mmicrl_results.get("type_proportions", [])
+    if not theta_per_type:
+        return config_theta_defaults
+
+    type_keys = sorted(theta_per_type.keys(), key=lambda k: int(k))
+    n_types = len(type_keys)
+    theta_max = {}
+
+    if type_proportions and len(type_proportions) == n_types:
+        counts = np.round(np.array(type_proportions) * n_workers).astype(int)
+        diff = n_workers - counts.sum()
+        counts[np.argmax(counts)] += diff
+        worker_type_map = []
+        for t_idx, count in enumerate(counts):
+            worker_type_map.extend([t_idx] * count)
+        for w in range(n_workers):
+            type_k = type_keys[worker_type_map[w]]
+            raw_theta = theta_per_type[type_k]
+            clamped = {}
+            for muscle, val in raw_theta.items():
+                floor = config_theta_defaults.get(muscle, 0.5)
+                clamped[muscle] = max(float(val), float(floor))
+            theta_max[f"worker_{w}"] = clamped
+    else:
+        conservative = {}
+        for type_k in type_keys:
+            for muscle, val in theta_per_type[type_k].items():
+                floor = config_theta_defaults.get(muscle, 0.5)
+                clamped_val = max(float(val), float(floor))
+                if muscle not in conservative or clamped_val < conservative[muscle]:
+                    conservative[muscle] = clamped_val
+        theta_max = {f"worker_{w}": dict(conservative) for w in range(n_workers)}
+
+    return theta_max
+
+
 def seed_everything(seed: int) -> None:
     """Set random seeds for reproducibility.
 

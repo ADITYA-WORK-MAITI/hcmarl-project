@@ -27,6 +27,8 @@ def main():
     parser.add_argument("--seeds", nargs="+", type=int, default=SEEDS)
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running")
+    parser.add_argument("--drive-backup-dir", type=str, default=None,
+                        help="Mirror checkpoints+logs here (e.g. /content/drive/MyDrive/hcmarl_backup)")
     args = parser.parse_args()
 
     total = len(args.methods) * len(args.seeds)
@@ -46,6 +48,8 @@ def main():
                 "--seed", str(seed),
                 "--device", args.device,
             ]
+            if args.drive_backup_dir:
+                cmd += ["--drive-backup-dir", args.drive_backup_dir]
 
             print(f"\n[{run_id}/{total}] {method} seed={seed}")
             print(f"  Config: {config}")

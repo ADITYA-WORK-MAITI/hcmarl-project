@@ -336,9 +336,18 @@ class MAPPO:
         return {"actor_loss": actor_loss.item(), "critic_loss": critic_loss.item()}
 
     def save(self, path):
-        torch.save({"actor": self.actor.state_dict(), "critic": self.critic.state_dict()}, path)
+        torch.save({
+            "actor": self.actor.state_dict(),
+            "critic": self.critic.state_dict(),
+            "actor_optim": self.actor_optim.state_dict(),
+            "critic_optim": self.critic_optim.state_dict(),
+        }, path)
 
     def load(self, path):
         ckpt = torch.load(path, map_location=self.device)
         self.actor.load_state_dict(ckpt["actor"])
         self.critic.load_state_dict(ckpt["critic"])
+        if "actor_optim" in ckpt:
+            self.actor_optim.load_state_dict(ckpt["actor_optim"])
+        if "critic_optim" in ckpt:
+            self.critic_optim.load_state_dict(ckpt["critic_optim"])

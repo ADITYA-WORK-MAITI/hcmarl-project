@@ -16,6 +16,7 @@ def main():
     parser.add_argument("--seeds", nargs="+", type=int, default=SEEDS)
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--drive-backup-dir", type=str, default=None)
     args = parser.parse_args()
 
     total = len(args.workers) * len(args.seeds)
@@ -35,6 +36,8 @@ def main():
                 "--seed", str(seed),
                 "--device", args.device,
             ]
+            if args.drive_backup_dir:
+                cmd += ["--drive-backup-dir", args.drive_backup_dir]
             print(f"  N={n} seed={seed}: {' '.join(cmd)}")
             if not args.dry_run:
                 subprocess.run(cmd)

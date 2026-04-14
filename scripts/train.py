@@ -43,6 +43,42 @@ METHODS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Run-state persistence (C1: resume correctness)
+# ---------------------------------------------------------------------------
+
+def _write_run_state(path, global_step, episode_count, cost_ema, best_reward,
+                     theta_max, seed, method):
+    """Persist everything the policy checkpoint does NOT contain.
+
+    Paired with an agent.save() call so a Colab runtime disconnect can be
+    resumed without losing step counters, RNG state, or the theta_max the
+    policy was trained against (which may come from MMICRL).
+    """
+    import random as _random
+    state = {
+        "global_step": int(global_step),
+        "episode_count": int(episode_count),
+        "cost_ema": float(cost_ema),
+        "best_reward": float(best_reward),
+        "theta_max": theta_max,
+        "seed": int(seed),
+        "method": method,
+        "rng_np": np.random.get_state(),
+        "rng_torch": torch.get_rng_state(),
+        "rng_torch_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+        "rng_python": _random.getstate(),
+    }
+    torch.save(state, path)
+
+
+def _load_run_state(path):
+    """Load a run_state.pt written by _write_run_state."""
+    if not os.path.exists(path):
+        return None
+    return torch.load(path, map_location="cpu", weights_only=False)
+
+
 def create_agent(method, obs_dim, global_obs_dim, n_actions, n_agents, cfg, device,
                   action_mode="discrete", n_muscles=None, use_nswf=True):
     """Instantiate the correct agent class based on method name."""
@@ -221,8 +257,13 @@ def run_mmicrl_pretrain(cfg, log_dir="logs"):
 
 def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmicrl_model=None,
           ecbf_mode="on", use_nswf=True, disagreement_type="divergent",
-          drive_backup_dir=None):
-    """Full training loop with logging and checkpointing."""
+          drive_backup_dir=None, resume_state=None):
+    """Full training loop with logging and checkpointing.
+
+    If resume_state is given (loaded from run_state.pt by main()), training
+    counters, RNG state, and theta_max are restored from it so a resumed
+    run picks up the previous trajectory rather than restarting from zero.
+    """
     # Full seeding: numpy, torch (CPU+CUDA), cudnn.deterministic, PYTHONHASHSEED.
     # Python stdlib random is seeded too — MMICRL / allocator internals may use it.
     import random as _random
@@ -240,45 +281,25 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     checkpoint_interval = train_cfg.get("checkpoint_interval", 100_000)
     n_eval_episodes = train_cfg.get("n_eval_episodes", 10)
 
-    # If MMICRL discovered thresholds, inject them into config.
-    # Clamp each MMICRL theta to be at least as large as the config default
-    # to avoid structurally infeasible constraints (MMICRL discovers thresholds
-    # from demo data which may be lower than what the env dynamics allow).
-    config_theta_defaults = env_cfg.get("theta_max", {})
-    theta_max = config_theta_defaults
-    if mmicrl_results and method == "hcmarl":
-        theta_per_type = mmicrl_results.get("theta_per_type", {})
-        type_proportions = mmicrl_results.get("type_proportions", [])
-        if theta_per_type:
-            type_keys = sorted(theta_per_type.keys(), key=lambda k: int(k))
-            n_types = len(type_keys)
-            theta_max = {}
-            if type_proportions and len(type_proportions) == n_types:
-                counts = np.round(np.array(type_proportions) * n_workers).astype(int)
-                diff = n_workers - counts.sum()
-                counts[np.argmax(counts)] += diff
-                worker_type_map = []
-                for t_idx, count in enumerate(counts):
-                    worker_type_map.extend([t_idx] * count)
-                for w in range(n_workers):
-                    type_k = type_keys[worker_type_map[w]]
-                    raw_theta = theta_per_type[type_k]
-                    clamped = {}
-                    for muscle, val in raw_theta.items():
-                        floor = config_theta_defaults.get(muscle, 0.3)
-                        clamped[muscle] = max(val, floor)
-                    theta_max[f"worker_{w}"] = clamped
-            else:
-                conservative = {}
-                for type_k in type_keys:
-                    for muscle, val in theta_per_type[type_k].items():
-                        floor = config_theta_defaults.get(muscle, 0.3)
-                        clamped_val = max(val, floor)
-                        if muscle not in conservative or clamped_val < conservative[muscle]:
-                            conservative[muscle] = clamped_val
-                theta_max = {f"worker_{w}": dict(conservative) for w in range(n_workers)}
-            print(f"Using MMICRL-learned thresholds for {n_workers} workers ({n_types} types, proportional assignment)")
-            print(f"  (clamped to config floor: {dict(config_theta_defaults)})")
+    # Resume: if run_state is present, its theta_max takes priority over
+    # a freshly-run MMICRL. Guarantees the resumed env has the same
+    # thresholds the saved policy was trained against.
+    from hcmarl.utils import build_per_worker_theta_max
+    config_theta_defaults = env_cfg.get("theta_max", {}) or {}
+    if resume_state is not None and resume_state.get("theta_max") is not None:
+        theta_max = resume_state["theta_max"]
+        print(f"Resume: reusing saved theta_max from run_state (step "
+              f"{resume_state.get('global_step', 0):,})")
+    else:
+        theta_max = build_per_worker_theta_max(
+            mmicrl_results, config_theta_defaults, n_workers, method,
+        )
+        if mmicrl_results and method == "hcmarl" and isinstance(theta_max, dict) and any(
+            isinstance(v, dict) for v in theta_max.values()
+        ):
+            n_types = len(mmicrl_results.get("theta_per_type", {}))
+            print(f"Using MMICRL-learned thresholds for {n_workers} workers "
+                  f"({n_types} types, clamped to config floor: {dict(config_theta_defaults)})")
 
     # Directories
     run_name = f"{method}_seed{seed}"
@@ -364,6 +385,29 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     cost_ema = 0.0  # Exponential moving average of per-step cost rate
     next_checkpoint_step = checkpoint_interval
     start_time = time.time()
+
+    # Restore counters + RNG state from run_state (if resuming).
+    # Agent weights + optimizer state were already loaded above via agent.load().
+    if resume_state is not None:
+        global_step = int(resume_state.get("global_step", 0))
+        episode_count = int(resume_state.get("episode_count", 0))
+        best_reward = float(resume_state.get("best_reward", -float("inf")))
+        cost_ema = float(resume_state.get("cost_ema", 0.0))
+        next_checkpoint_step = ((global_step // checkpoint_interval) + 1) * checkpoint_interval
+        rng_np = resume_state.get("rng_np")
+        if rng_np is not None:
+            np.random.set_state(rng_np)
+        rng_torch = resume_state.get("rng_torch")
+        if rng_torch is not None:
+            torch.set_rng_state(rng_torch)
+        rng_torch_cuda = resume_state.get("rng_torch_cuda")
+        if rng_torch_cuda is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(rng_torch_cuda)
+        rng_python = resume_state.get("rng_python")
+        if rng_python is not None:
+            _random.setstate(rng_python)
+        print(f"Resume: step={global_step:,} episode={episode_count} "
+              f"best_reward={best_reward:.2f} cost_ema={cost_ema:.4f}")
 
     print(f"{'='*60}")
     print(f"HC-MARL Training: {METHODS.get(method, method)}")
@@ -565,6 +609,13 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
             if hasattr(agent, 'save'):
                 ckpt_path = os.path.join(ckpt_dir, f"checkpoint_{global_step}.pt")
                 agent.save(ckpt_path)
+                # C1: run_state.pt sits next to the policy ckpt so resume
+                # restores counters + theta_max alongside the weights.
+                _write_run_state(
+                    os.path.join(ckpt_dir, "run_state.pt"),
+                    global_step, episode_count, cost_ema, best_reward,
+                    theta_max, seed, method,
+                )
             # Mirror to Drive (survives Colab runtime disconnect).
             # Logger flushes CSV every episode, so copy after each checkpoint.
             if drive_backup_dir:
@@ -589,6 +640,11 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     # Final checkpoint
     if hasattr(agent, 'save'):
         agent.save(os.path.join(ckpt_dir, "checkpoint_final.pt"))
+        _write_run_state(
+            os.path.join(ckpt_dir, "run_state.pt"),
+            global_step, episode_count, cost_ema, best_reward,
+            theta_max, seed, method,
+        )
 
     # Final Drive mirror
     if drive_backup_dir:
@@ -672,6 +728,15 @@ def main():
         device = args.device
     print(f"Using device: {device}")
 
+    # Seed EVERYTHING before any stochastic work. MMICRL pretrain uses
+    # torch/numpy/random and must be seeded to be reproducible across
+    # identical --seed invocations. train() also calls seed_everything;
+    # the second call is idempotent and re-seeds before the RL loop.
+    import random as _random
+    from hcmarl.utils import seed_everything
+    seed_everything(args.seed)
+    _random.seed(args.seed)
+
     # ---------------------------------------------------------------
     # C-17: Read ablation flags from config AND CLI overrides
     # ---------------------------------------------------------------
@@ -708,6 +773,24 @@ def main():
     if mmicrl_cfg.get("use_fixed_theta", False):
         run_mmicrl = False
 
+    # Resume detection: if run_state.pt sits next to the checkpoint we are
+    # resuming from, skip MMICRL — the saved theta_max is authoritative, and
+    # MMICRL is stochastic enough that re-running could produce different
+    # thresholds than the policy was trained against.
+    resume_state = None
+    if args.resume:
+        resume_state_path = os.path.join(
+            os.path.dirname(os.path.abspath(args.resume)), "run_state.pt",
+        )
+        resume_state = _load_run_state(resume_state_path)
+        if resume_state is not None:
+            print(f"Resume: loaded run_state from {resume_state_path}")
+            if resume_state.get("theta_max") is not None:
+                run_mmicrl = False
+                print("Resume: skipping MMICRL pretrain (theta_max restored from run_state)")
+        else:
+            print(f"Resume: no run_state.pt at {resume_state_path} — counters will start at 0")
+
     mmicrl_results = None
     mmicrl_model = None
     if run_mmicrl:
@@ -723,7 +806,7 @@ def main():
 
     train(cfg, args.method, args.seed, device, args.resume, mmicrl_results, mmicrl_model,
           ecbf_mode=ecbf_mode, use_nswf=use_nswf, disagreement_type=disagreement_type,
-          drive_backup_dir=args.drive_backup_dir)
+          drive_backup_dir=args.drive_backup_dir, resume_state=resume_state)
 
 
 if __name__ == "__main__":

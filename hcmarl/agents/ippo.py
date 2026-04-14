@@ -111,10 +111,18 @@ class IPPO:
         }
 
     def save(self, path):
-        torch.save({"actors": [a.state_dict() for a in self.actors],
-                     "critics": [c.state_dict() for c in self.critics]}, path)
+        torch.save({
+            "actors": [a.state_dict() for a in self.actors],
+            "critics": [c.state_dict() for c in self.critics],
+            "actor_optims": [o.state_dict() for o in self.actor_optims],
+            "critic_optims": [o.state_dict() for o in self.critic_optims],
+        }, path)
 
     def load(self, path):
         ckpt = torch.load(path, map_location=self.device)
         for i, sd in enumerate(ckpt["actors"]): self.actors[i].load_state_dict(sd)
         for i, sd in enumerate(ckpt["critics"]): self.critics[i].load_state_dict(sd)
+        if "actor_optims" in ckpt:
+            for i, sd in enumerate(ckpt["actor_optims"]): self.actor_optims[i].load_state_dict(sd)
+        if "critic_optims" in ckpt:
+            for i, sd in enumerate(ckpt["critic_optims"]): self.critic_optims[i].load_state_dict(sd)

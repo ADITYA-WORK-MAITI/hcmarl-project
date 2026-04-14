@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from hcmarl.envs.pettingzoo_wrapper import WarehousePettingZoo
 from hcmarl.agents.ippo import IPPO
 from hcmarl.logger import HCMARLLogger
-from hcmarl.utils import seed_everything
+from hcmarl.utils import seed_everything, build_per_worker_theta_max
 from scripts.train import create_agent
 import yaml
 
@@ -58,31 +58,15 @@ def _build_eval_env(cfg, mmicrl_results=None, method="hcmarl"):
                 k: v for k, v in m_params.items() if k in ("F", "R", "r")
             }
 
-    theta_max = env_cfg.get("theta_max", None)
-    if mmicrl_results and method == "hcmarl":
-        theta_per_type = mmicrl_results.get("theta_per_type", {})
-        type_proportions = mmicrl_results.get("type_proportions", [])
-        if theta_per_type:
-            type_keys = sorted(theta_per_type.keys(), key=lambda k: int(k))
-            n_types = len(type_keys)
-            theta_max = {}
-            if type_proportions and len(type_proportions) == n_types:
-                counts = np.round(np.array(type_proportions) * n_workers).astype(int)
-                diff = n_workers - counts.sum()
-                counts[np.argmax(counts)] += diff
-                worker_type_map = []
-                for t_idx, count in enumerate(counts):
-                    worker_type_map.extend([t_idx] * count)
-                for w in range(n_workers):
-                    type_k = type_keys[worker_type_map[w]]
-                    theta_max[f"worker_{w}"] = theta_per_type[type_k]
-            else:
-                conservative = {}
-                for type_k in type_keys:
-                    for muscle, val in theta_per_type[type_k].items():
-                        if muscle not in conservative or val < conservative[muscle]:
-                            conservative[muscle] = val
-                theta_max = {f"worker_{w}": dict(conservative) for w in range(n_workers)}
+    config_theta_defaults = env_cfg.get("theta_max", {}) or {}
+    # Shared helper applies the same clamp-to-floor logic train.py uses
+    # so the eval env thresholds match what the policy was trained under.
+    theta_max = build_per_worker_theta_max(
+        mmicrl_results, config_theta_defaults, n_workers, method,
+    )
+    # Fall back to config flat dict for baselines / no-MMICRL runs
+    if theta_max is None or (isinstance(theta_max, dict) and not theta_max):
+        theta_max = config_theta_defaults if config_theta_defaults else None
 
     ecbf_alpha1 = ecbf_cfg.get("alpha1", 0.05)
     ecbf_alpha2 = ecbf_cfg.get("alpha2", 0.05)
@@ -125,7 +109,13 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
     for ep in range(n_episodes):
         obs, _ = env.reset()
         total_reward = 0.0
-        total_violations = 0
+        # Harmonized with train.py metric definitions:
+        #   episode_cost  -- count of worker-steps with ANY muscle violation
+        #                    (matches train.py "cumulative_cost")
+        #   total_dense_cost -- sum of dense per-step info["cost"] values
+        #                    (matches what the Lagrangian critic sees)
+        episode_cost = 0
+        total_dense_cost = 0.0
         safe_steps = 0
         tasks_per_worker = np.zeros(n_workers)
         peak_mf = 0.0
@@ -147,17 +137,22 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
             obs, rewards, terms, truncs, infos = env.step(actions)
             total_reward += sum(rewards.values())
 
-            step_violations = 0
+            step_any_violation = 0  # count of worker-steps with any muscle violation
+            step_dense_cost = 0.0
             for i, (agent_id, info) in enumerate(sorted(infos.items())):
                 fatigue = info.get("fatigue", {})
                 task = info.get("task", "rest")
                 worker_theta = env.theta_max_per_worker[i]
+                # info["violations"] is int(cost > 0) from the env — 1 iff
+                # this worker violated on this step (matches train.py).
+                if info.get("violations", 0) > 0:
+                    step_any_violation += 1
+                step_dense_cost += float(info.get("cost", 0.0))
                 for m, mf in fatigue.items():
                     if m not in worker_theta:
                         warnings.warn(f"theta_max missing for muscle '{m}', using conservative default 0.5")
                     theta = worker_theta.get(m, 0.5)
                     if mf > theta:
-                        step_violations += 1
                         if not in_violation[i]:
                             in_violation[i] = True
                             violation_start[i] = step
@@ -176,8 +171,9 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
                     demands = env.task_mgr.get_demand_vector(task)
                     total_ecbf_opportunities += int((demands > 0).sum())
 
-            total_violations += step_violations
-            if step_violations == 0:
+            episode_cost += step_any_violation
+            total_dense_cost += step_dense_cost
+            if step_any_violation == 0:
                 safe_steps += 1
 
             if all(terms.values()):
@@ -188,8 +184,9 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
         jain = float((tasks_per_worker.sum()**2) / (n * (tasks_per_worker**2).sum() + 1e-8)) if tasks_per_worker.sum() > 0 else 1.0
         sai = 1.0 - (total_ecbf_interventions / max(1, total_ecbf_opportunities))
 
-        all_metrics["violation_rate"].append(total_violations / max(1, n_steps * n_workers * env.n_muscles))
-        all_metrics["cumulative_cost"].append(float(total_violations))
+        # Denominator matches train.py: per worker-step.
+        all_metrics["violation_rate"].append(episode_cost / max(1, n_steps * n_workers))
+        all_metrics["cumulative_cost"].append(float(episode_cost))
         all_metrics["safety_rate"].append(safe_steps / max(1, n_steps))
         all_metrics["tasks_completed"].append(float(tasks_per_worker.sum()))
         all_metrics["cumulative_reward"].append(total_reward)
@@ -198,6 +195,7 @@ def evaluate(cfg, method, checkpoint_path, n_episodes=100, seed=42, device="cpu"
         all_metrics["forced_rest_rate"].append(forced_rests / max(1, n_steps * n_workers))
         all_metrics["constraint_recovery_time"].append(np.mean(recovery_times) if recovery_times else 0.0)
         all_metrics["safety_autonomy_index"].append(sai)
+        all_metrics.setdefault("dense_cost_mean", []).append(total_dense_cost / max(1, n_steps * n_workers))
 
         if (ep + 1) % 20 == 0:
             print(f"  Episode {ep+1}/{n_episodes}: R={total_reward:.1f}, Safe={safe_steps/n_steps:.2%}")

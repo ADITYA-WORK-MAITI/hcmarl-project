@@ -378,8 +378,16 @@ class MAPPOLagrangian:
             )
 
     def save(self, path):
-        torch.save({"actor": self.actor.state_dict(), "critic": self.critic.state_dict(),
-                     "cost_critic": self.cost_critic.state_dict(), "log_lambda": self.log_lambda.data}, path)
+        torch.save({
+            "actor": self.actor.state_dict(),
+            "critic": self.critic.state_dict(),
+            "cost_critic": self.cost_critic.state_dict(),
+            "log_lambda": self.log_lambda.data,
+            "actor_optim": self.actor_optim.state_dict(),
+            "critic_optim": self.critic_optim.state_dict(),
+            "cost_critic_optim": self.cost_critic_optim.state_dict(),
+            "lambda_optim": self.lambda_optim.state_dict(),
+        }, path)
 
     def load(self, path):
         ckpt = torch.load(path, map_location=self.device)
@@ -387,3 +395,11 @@ class MAPPOLagrangian:
         self.critic.load_state_dict(ckpt["critic"])
         self.cost_critic.load_state_dict(ckpt["cost_critic"])
         self.log_lambda.data = ckpt["log_lambda"]
+        if "actor_optim" in ckpt:
+            self.actor_optim.load_state_dict(ckpt["actor_optim"])
+        if "critic_optim" in ckpt:
+            self.critic_optim.load_state_dict(ckpt["critic_optim"])
+        if "cost_critic_optim" in ckpt:
+            self.cost_critic_optim.load_state_dict(ckpt["cost_critic_optim"])
+        if "lambda_optim" in ckpt:
+            self.lambda_optim.load_state_dict(ckpt["lambda_optim"])
