@@ -29,7 +29,7 @@ class HCMARLLogger:
         "tasks_completed", "cumulative_reward", "jain_fairness",
         "peak_fatigue", "forced_rest_rate", "constraint_recovery_time",
         "safety_autonomy_index", "ecbf_interventions",
-        "lambda", "actor_loss", "critic_loss", "cost_critic_loss",
+        "lambda", "cost_ema", "actor_loss", "critic_loss", "cost_critic_loss",
         "policy_loss", "value_loss", "entropy",
     ])
 

@@ -1330,3 +1330,26 @@ python -m pytest -q                   # full suite
 
 **Files changed:** 13 (utils.py, train.py, evaluate.py, run_baselines.py, 2 configs, 4 notebooks, new test file, project_log.md, MEMORY.md)
 **Tests:** 423 passed, 1 skipped, 0 failed (416 baseline + 7 new Serious-tier)
+
+---
+
+## 2026-04-15 | ~09:40 IST — Phase B Moderate-tier fixes (M1 verify, M5, M8)
+
+Autonomous-loop continuation of the Phase B audit. Moderate items M1, M5, M8 were the safe ones to ship without user review — the rest (M4 persistent CSV writer, M6 determinism flag, M7 entropy anneal) change training dynamics and were deferred until the user is back to authorize them. M1 was already implemented in d414adf (main() reads run_state.pt sibling of --resume and sets run_mmicrl=False if theta_max is present); I added a regression test that round-trips _write_run_state/_load_run_state and asserts theta_max survives, so a future edit cannot silently break the resume gate. M5 adds cost_ema to the logger's CSV schema and always populates it in the episode metrics dict, so dual-variable trajectories become reproducible post-hoc. M8 emits a UserWarning when muscle_groups config contains any key outside {F, R, r} — the 3CC-r ODE ignores everything else, and previously those keys were dropped in silence.
+
+M3 (hcmarl-project vs hcmarl_project repo name inconsistency) was not actionable inside the repo — all four tracked notebooks already use the local underscore path consistently. The hyphen only appears in the GitHub clone URL and the HCMARL_Seed0.ipynb referenced in ISSUE.docx is Colab-only and not in the repo.
+
+Added tests/test_moderate_tier.py with 4 new tests (cost_ema in CSV columns, cost_ema gets written, run_state round-trip, muscle_param warning). Full suite: 427 passed, 1 skipped — no regressions against the 423 baseline from the Serious-tier commit.
+
+**Commands executed (in order):**
+```
+grep -n run_state scripts/train.py          # M1 verify gate exists
+edit scripts/train.py                        # M8 warn, M5 ep_metrics cost_ema
+edit hcmarl/logger.py                        # M5 CSV_COLUMNS
+write tests/test_moderate_tier.py
+python -m pytest tests/test_moderate_tier.py tests/test_serious_tier.py -v
+python -m pytest -q                          # full suite, background
+```
+
+**Files changed:** 5 (scripts/train.py, hcmarl/logger.py, tests/test_moderate_tier.py, project_log.md, MEMORY.md)
+**Tests:** 427 passed, 1 skipped, 0 failed (423 baseline + 4 new Moderate-tier)

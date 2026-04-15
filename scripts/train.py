@@ -338,14 +338,27 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     else:
         env_action_mode = "discrete"
 
-    # Build muscle_params_override from config (C-17: no_reperfusion ablation)
+    # Build muscle_params_override from config (C-17: no_reperfusion ablation).
+    # M8: only F, R, r are recognised by the 3CC-r ODE. Warn loudly if the
+    # config has extra keys so nobody silently drops a parameter they thought
+    # was being applied.
     muscle_params_override = None
     muscle_groups_cfg = env_cfg.get("muscle_groups")
     if muscle_groups_cfg:
         muscle_params_override = {}
+        _allowed = {"F", "R", "r"}
         for m_name, m_params in muscle_groups_cfg.items():
+            extras = set(m_params.keys()) - _allowed
+            if extras:
+                import warnings as _w
+                _w.warn(
+                    f"muscle_groups.{m_name} has keys {sorted(extras)} that "
+                    f"the 3CC-r ODE does not use; they are being dropped. "
+                    f"Only {sorted(_allowed)} are applied.",
+                    UserWarning, stacklevel=2,
+                )
             muscle_params_override[m_name] = {
-                k: v for k, v in m_params.items() if k in ("F", "R", "r")
+                k: v for k, v in m_params.items() if k in _allowed
             }
 
     # ECBF alphas from config (previously hardcoded, now configurable)
@@ -610,6 +623,9 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
         }
         if is_lagrangian:
             ep_metrics["lambda"] = agent.lam
+        # M5: always log cost_ema — the Lagrangian state variable drives lambda
+        # and is needed to reproduce / debug dual-variable trajectories.
+        ep_metrics["cost_ema"] = float(cost_ema)
         ep_metrics.update(update_info)
 
         logger.log_episode(ep_metrics)
