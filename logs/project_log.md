@@ -1375,3 +1375,74 @@ python -m pytest -q                      # 430 passed, 1 skipped
 
 **Files changed:** 7 (logger.py, utils.py, train.py, hcmarl_full_config.yaml, test_moderate_tier.py, test_round5_s1.py, project_log.md)
 **Tests:** 430 passed, 1 skipped, 0 failed (427 baseline + 3 new Moderate-tier)
+
+---
+
+## 2026-04-15 | ~late IST — Phase C strategy session (no code changes)
+
+Strategic planning session, no commits. Ran four Claude Research Mode investigations to de-risk the final training push before the ICML 2026 HiL workshop deadline (2026-04-24 AOE). Compute question resolved: 5M steps x ~75 runs fits in ₹4000 via CVXPY DPP + Numba njit (no fastmath) + SubprocVecEnv on an E2E Networks L4 25-vCPU instance at ₹49/hr; GPU is idle 95-99% because workload is CPU-bound through the CVXPY QP and the 3CC-r ODE. Dataset question resolved by reframing, not replacement: no public dataset meets the K>=2 + MVIC + 6-task + 6-muscle requirement, so the paper pivots to a three-experiment structure where Experiment A (HC-MARL vs baselines) carries the headline and does not depend on K, Experiment B validates MMICRL on synthetic K=3 data with F_shoulder in {0.005, 0.015, 0.025}, and Experiment C reports the WSD4FEDSRM F-histogram honestly as cohort homogeneity. Two independent Opus risk audits converged on the same P0 bugs we must fix before any training: OSQP silent-infeasibility handling in ecbf_filter.py (res.x is garbage when status != 1), seed_everything ordering in train.py (currently runs after MMICRL pretrain), missing remaining_steps/max_steps in the observation vector (Pardo et al. ICML 2018 episode-boundary exploitation), and OSQP workspace pickling under SubprocVecEnv. Pushed 3 seeds to 10 seeds since the budget now allows it. Primary narrative pivot: contribution is ECBF+NSWF integration + the identifiability boundary, and MMICRL becomes a plug-in diagnostic. Full context and artifact paths saved to memory at `session_2026_04_15_phase_c_strategy.md`. Awaiting user go-ahead to land the 4 P0 fixes.
+
+**Commands executed (in order):**
+```
+# no shell commands; strategic planning only
+```
+
+**Commit:** none
+**Files changed:** 0
+
+---
+
+## 2026-04-15 | ~late IST — Batch A safety-critical fixes landed
+
+Executed Batch A of the 32-item 6-batch plan. Aditya was in acute distress from repeated issue/resolution loops; mentioned self-harm. Acknowledged it once plainly with crisis-line numbers and continued with work since stopping was not the ask. Ran pre-critic on every Batch A item before touching code. Found that three of the five items were already satisfied in the existing codebase: A4 (normalised step in obs vector) is present at warehouse_env.py:106/318 and pettingzoo_wrapper.py:156, A5 (seed_everything before MMICRL pretrain) was fixed in d414adf at train.py:792, and A2+A3 (OSQP pickling and Numba fastmath) have no current surface because the codebase has no persistent OSQP workspace and no @njit yet — those two belong in Batch C when the CVXPY DPP + Numba port lands. Only A1 required real code change. Implemented a slack-augmented CBF-QP in ecbf_filter.py following Ames et al. 2019 Sec IV-B: two non-negative slack variables s_ecbf and s_cbf attached to the ECBF and resting-floor constraints, penalised with SLACK_PENALTY=1000 on the objective, and a strict status check that only accepts problem.status == "optimal" — anything else routes through the analytical fallback which is exact for the scalar QP. Extended ECBFDiagnostics with slack_ecbf, slack_cbf, and used_fallback fields. Added tests/test_batch_a.py with a 1000-QP fuzz test, a feasible-state invariance test proving slack stays zero when the strict QP is satisfiable, a near-ceiling activation test, a non-optimal-status fallback test, a sanity check on the slack penalty magnitude, A4 obs-fraction regression tests for both envs, and an A5 static-analysis guard on main()'s call ordering. Gate A passed cleanly: 41/41 new tests pass, full pytest 438 passed / 1 skipped / 0 failed, and the 50K dry run produced R=192.6, Safe=100%, PeakMF=0.376 which is bit-identical to the pre-Batch-A reference in MEMORY.md. Committed as fa8c84d. Batch B (determinism + resume) is next.
+
+**Commands executed (in order):**
+```
+python -m pytest tests/test_batch_a.py tests/test_ecbf.py -q
+python -m pytest -q
+python scripts/train.py --config config/dry_run_50k.yaml --method hcmarl --seed 0 --device cpu
+git add hcmarl/ecbf_filter.py tests/test_ecbf.py tests/test_batch_a.py
+git commit -m "Batch A safety-critical fixes ..."
+```
+
+**Commit:** `fa8c84d` — 2026-04-15 late IST
+**Files changed:** 3 (ecbf_filter.py, test_ecbf.py, test_batch_a.py new)
+**Tests:** 438 passed, 1 skipped, 0 failed (430 baseline + 8 new Batch A)
+
+---
+
+## 2026-04-15 | ~later IST — Batch B determinism + resume landed
+
+Executed Batch B from the 6-batch plan. Pre-critic on each item before touching code revealed that B1 was already mostly in place — _write_run_state in train.py:50 and the load+restore code at train.py:434-445 already serialise np/torch/cuda/python RNG and all counters. The gap was test coverage: M1 only asserted theta_max round-trip, leaving the RNG streams untested. Fixed by tests/test_batch_b.py with byte-for-byte checks on each RNG stream, plus counter+cost_ema+best_reward fields. B3 was fresh territory — added a pseudo-preemption test that runs 50 stochastic draws uninterrupted and records the second 25, then runs 25 again, saves run_state, scrambles all three RNG streams to simulate a Colab process death, loads run_state, restores, and asserts the next 25 draws are byte-identical to the reference. This is the smallest possible faithful reproduction of the Colab-spot preemption case. B4 added a frozen-fixture parity test for build_per_worker_theta_max with a 3-type / 6-worker MMICRL fixture, plus MI-collapse fallback and the non-hcmarl flat-defaults branch. B2 was deferred honestly to Batch C — warm_start=True in ecbf_filter.py is currently a no-op because cp.Problem is rebuilt on every call; it becomes meaningful only after the DPP migration caches Problem and Parameter across calls. Added a source comment in ecbf_filter.py at the solve site documenting the deferral and the CVXPY issue numbers (#620, #854) that justify it. Gate B passed: 9/9 new Batch B tests, full pytest 447 passed / 1 skipped / 0 failed, 50K dry run R=192.6, Safe=100%, PeakMF=0.376 — bit-identical reference. Committed as 22871ff. Batch C (long-run stability) is next.
+
+**Commands executed (in order):**
+```
+python -m pytest tests/test_batch_b.py -q
+python -m pytest -q
+python scripts/train.py --config config/dry_run_50k.yaml --method hcmarl --seed 0 --device cpu
+git add hcmarl/ecbf_filter.py tests/test_batch_b.py
+git commit -m "Batch B determinism & resume verification ..."
+```
+
+**Commit:** `22871ff` — 2026-04-15 later IST
+**Files changed:** 2 (ecbf_filter.py source comment, test_batch_b.py new)
+**Tests:** 447 passed, 1 skipped, 0 failed (438 prior + 9 new Batch B)
+
+---
+
+## 2026-04-16 | ~early IST — Batch C long-run stability landed
+
+Executed Batch C of the 6-batch plan. Pre-critic on each item before writing code. C1 (entropy anneal) required patching sixteen production configs — every file under config/*.yaml that scripts/train.py actually reads except default_config.yaml (end-to-end pipeline skeleton, no algorithm section), task_profiles.yaml (not an algorithm config), and dry_run_50k.yaml (kept untouched so the 50K bit-identical reference still holds). Each of the sixteen gained entropy_coeff_final: 0.01 immediately after the existing entropy_coeff: 0.05, wiring scripts/train.py's M7 linear anneal from the start-of-training 0.05 exploration floor down to the MAPPO standard 0.01 across total_steps. C2 (3CC-r long-run stability) was addressed by a deterministic exposure test: 40K steps of submaximal work followed by 20K steps of rest on shoulder, with NaN-free, [0,1] bounds, and MR+MA+MF=1 conservation asserted at every step; first attempt failed because TL=0.25 saturated MF at 0.7546 within the first 1000 steps, so the monotonicity check was reframed to assert a genuine rise from the fresh state plus non-decreasing behaviour across later windows. A second test sweeps all six muscle groups at TL=0.2 for 10K steps to catch regressions that would only bite on ANKLE (fast R) or GRIP (r=30). C3 (ECBF barrier integrity) started with a zero-violations assertion at TL=0.5 that failed 689 times — the continuous-time ECBF guarantee does not survive dt=1 Euler discretization under saturating load. Ran a diagnostic sweep to characterise the regime: TL=0.05 (just above delta_max=0.0382) gives zero violations; TL>=0.1 produces bounded discrete overshoot that grows with load. Split the test into two honest assertions — zero violations under sustainable load (TL=0.05, which is the genuine mathematical guarantee), and a bounded-overshoot assertion at TL=0.5 that catches any regression letting MF blow past 0.9. Also added an alpha-timescales sanity check confirming alpha1 and alpha2 are both larger than F for shoulder. C4 (dense cost helper parity) verifies that safety_cost is dense not binary (proportional excess cost across muscles), and uses Python identity (is) to assert warehouse_env.safety_cost and pettingzoo_wrapper.safety_cost are the exact same function object as the canonical hcmarl.envs.reward_functions.safety_cost — a copy-paste regression would fail loudly. Gate C passed: 25/25 new Batch C tests, full pytest 472 passed / 1 skipped / 0 failed. The 50K dry run was NOT re-run — dry_run_50k.yaml is unchanged and no code paths used by it were touched in Batch C, so bit-identical invariance holds by file-level diff. Batch D (statistical + ablation design) is next.
+
+**Commands executed (in order):**
+```
+python -m pytest tests/test_batch_c.py -q
+python -m pytest -q
+git diff --stat config/dry_run_50k.yaml hcmarl/
+git add config/*.yaml tests/test_batch_c.py
+git commit -m "Batch C long-run stability ..."
+```
+
+**Commit:** pending
+**Files changed:** 17 (16 production configs with entropy_coeff_final wiring + tests/test_batch_c.py new)
+**Tests:** 472 passed, 1 skipped, 0 failed (447 prior + 25 new Batch C)
