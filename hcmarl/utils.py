@@ -294,11 +294,15 @@ def build_per_worker_theta_max(mmicrl_results, config_theta_defaults, n_workers,
     return theta_max
 
 
-def seed_everything(seed: int) -> None:
+def seed_everything(seed: int, deterministic: bool = True) -> None:
     """Set random seeds for reproducibility.
 
     Args:
         seed: Integer seed value.
+        deterministic: If True (default), enable cudnn.deterministic — bit-exact
+            reproducibility at ~1.5x slowdown (M6). Turn off only for throughput
+            experiments where per-seed variance is acceptable; paper runs must
+            keep it True.
     """
     np.random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -308,12 +312,15 @@ def seed_everything(seed: int) -> None:
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
-            # M-1: deterministic=True slows GPU ~1.5x but is required for
-            # reproducibility in research. benchmark=False ensures consistent
-            # algorithm selection across runs.
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
+            # M-1 rationale: deterministic=True ensures bit-exact reproducibility
+            # across runs at ~1.5x slowdown. benchmark=False prevents algorithm
+            # re-selection between invocations.
+            torch.backends.cudnn.deterministic = bool(deterministic)
+            torch.backends.cudnn.benchmark = not bool(deterministic)
             logger = get_logger(__name__)
-            logger.info("CUDA seed set; cudnn.deterministic=True (reproducible but ~1.5x slower)")
+            if deterministic:
+                logger.info("CUDA seed set; cudnn.deterministic=True (reproducible but ~1.5x slower)")
+            else:
+                logger.info("CUDA seed set; cudnn.deterministic=False (faster, not bit-exact reproducible)")
     except ImportError:
         pass

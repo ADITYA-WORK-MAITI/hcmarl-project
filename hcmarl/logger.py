@@ -64,6 +64,13 @@ class HCMARLLogger:
         else:
             self._csv_initialized = False
 
+        # M4: keep the CSV file handle open for the lifetime of the logger.
+        # Writing one episode per open/close was ~50K syscalls over 5M steps.
+        # We still flush() after every row so a Colab crash never loses more
+        # than the most recent episode.
+        self._csv_file = None
+        self._csv_writer = None
+
         if use_wandb:
             try:
                 import wandb
@@ -73,6 +80,19 @@ class HCMARLLogger:
             except ImportError:
                 print("wandb not installed, falling back to CSV-only logging")
                 self.use_wandb = False
+
+    def _ensure_csv_writer(self):
+        if self._csv_writer is not None:
+            return
+        mode = "a" if self._csv_initialized else "w"
+        self._csv_file = open(self.csv_path, mode, newline="")
+        self._csv_writer = csv.DictWriter(
+            self._csv_file, fieldnames=self._csv_columns,
+            extrasaction="ignore", restval="",
+        )
+        if not self._csv_initialized:
+            self._csv_writer.writeheader()
+            self._csv_initialized = True
 
     def log_step(self, metrics: Dict[str, float]):
         self.step_count += 1
@@ -84,17 +104,12 @@ class HCMARLLogger:
     def log_episode(self, metrics: Dict[str, float]):
         self.episode_count += 1
         metrics["episode"] = self.episode_count
-        if not self._csv_initialized:
-            with open(self.csv_path, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=self._csv_columns,
-                                        extrasaction="ignore")
-                writer.writeheader()
-            self._csv_initialized = True
-        with open(self.csv_path, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=self._csv_columns,
-                                    extrasaction="ignore", restval="")
-            writer.writerow({k: f"{v:.6f}" if isinstance(v, float) else v
-                            for k, v in metrics.items() if k in self._csv_columns})
+        self._ensure_csv_writer()
+        self._csv_writer.writerow({
+            k: f"{v:.6f}" if isinstance(v, float) else v
+            for k, v in metrics.items() if k in self._csv_columns
+        })
+        self._csv_file.flush()
         if self.use_wandb:
             self.wandb.log(metrics, step=self.episode_count)
 
@@ -123,5 +138,12 @@ class HCMARLLogger:
         return metrics
 
     def close(self):
+        if self._csv_file is not None:
+            try:
+                self._csv_file.flush()
+                self._csv_file.close()
+            finally:
+                self._csv_file = None
+                self._csv_writer = None
         if self.use_wandb:
             self.wandb.finish()

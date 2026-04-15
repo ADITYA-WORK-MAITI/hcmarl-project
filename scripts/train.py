@@ -281,15 +281,16 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     counters, RNG state, and theta_max are restored from it so a resumed
     run picks up the previous trajectory rather than restarting from zero.
     """
-    # Full seeding: numpy, torch (CPU+CUDA), cudnn.deterministic, PYTHONHASHSEED.
-    # Python stdlib random is seeded too — MMICRL / allocator internals may use it.
-    import random as _random
-    from hcmarl.utils import seed_everything
-    seed_everything(seed)
-    _random.seed(seed)
-
     env_cfg = cfg.get("environment", {})
     train_cfg = cfg.get("training", {})
+
+    # Full seeding: numpy, torch (CPU+CUDA), cudnn.deterministic, PYTHONHASHSEED.
+    # Python stdlib random is seeded too — MMICRL / allocator internals may use it.
+    # M6: deterministic flag honours training.deterministic in config (default True).
+    import random as _random
+    from hcmarl.utils import seed_everything
+    seed_everything(seed, deterministic=bool(train_cfg.get("deterministic", True)))
+    _random.seed(seed)
     n_workers = env_cfg.get("n_workers", 6)
     max_steps = env_cfg.get("max_steps", 480)
 
@@ -583,6 +584,21 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
 
             if all(terms.values()):
                 break
+
+        # M7: linear entropy annealing. If algorithm.entropy_coeff_final is set
+        # in the config, anneal entropy_coeff from its initial value down to
+        # entropy_coeff_final over total_steps — standard PPO practice, prevents
+        # the policy from thrashing with high entropy late in training.
+        algo_cfg = cfg.get("algorithm", {})
+        entropy_final = algo_cfg.get("entropy_coeff_final", None)
+        if entropy_final is not None:
+            entropy_start = float(algo_cfg.get("entropy_coeff", 0.05))
+            frac = min(1.0, global_step / max(1, total_steps))
+            new_ent = entropy_start + (float(entropy_final) - entropy_start) * frac
+            if is_hcmarl and hasattr(agent, 'mappo'):
+                agent.mappo.entropy_coeff = new_ent
+            elif hasattr(agent, 'entropy_coeff'):
+                agent.entropy_coeff = new_ent
 
         # PPO update at end of episode
         update_info = {}

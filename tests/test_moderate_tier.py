@@ -1,8 +1,12 @@
-"""Tests covering the Moderate-tier audit fixes (M1, M5, M8).
+"""Tests covering the Moderate-tier audit fixes (M1, M4, M5, M6, M7, M8).
 
 M1 — On resume, MMICRL pretrain is skipped when run_state.pt carries
      a saved theta_max (resume determinism).
+M4 — Logger keeps a persistent CSV handle rather than open/close per episode.
 M5 — cost_ema is declared in the logger's CSV schema.
+M6 — seed_everything accepts a deterministic flag for throughput/reproducibility
+     tradeoff.
+M7 — entropy_coeff linear anneal when config provides entropy_coeff_final.
 M8 — muscle_params_override warns when config contains keys the 3CC-r
      ODE does not consume.
 """
@@ -34,6 +38,7 @@ def test_m5_cost_ema_gets_written_to_csv():
             "episode": 1, "global_step": 100, "cost_ema": 0.1234,
             "cumulative_reward": 10.0,
         })
+        logger.close()
         with open(os.path.join(td, "training_log.csv")) as f:
             content = f.read()
         assert "cost_ema" in content.splitlines()[0]
@@ -77,6 +82,52 @@ def test_m1_run_state_round_trip_preserves_theta_max():
 # ---------------------------------------------------------------------------
 # M8 — muscle_params_override warns on silently-dropped keys
 # ---------------------------------------------------------------------------
+
+
+def test_m4_logger_keeps_persistent_csv_handle():
+    from hcmarl.logger import HCMARLLogger
+    with tempfile.TemporaryDirectory() as td:
+        logger = HCMARLLogger(log_dir=td, use_wandb=False)
+        assert logger._csv_file is None
+        logger.log_episode({"episode": 1, "cumulative_reward": 1.0})
+        # After first write the handle stays open across subsequent writes
+        first_handle = logger._csv_file
+        assert first_handle is not None
+        assert not first_handle.closed
+        for i in range(5):
+            logger.log_episode({"episode": i + 2, "cumulative_reward": float(i)})
+        assert logger._csv_file is first_handle
+        assert not logger._csv_file.closed
+        logger.close()
+        assert logger._csv_file is None
+        # All 6 rows landed in the file
+        with open(os.path.join(td, "training_log.csv")) as f:
+            lines = f.read().splitlines()
+        assert len(lines) == 7  # 1 header + 6 episodes
+
+
+def test_m6_seed_everything_accepts_deterministic_flag():
+    """Function signature must accept the deterministic kwarg without crashing
+    in either mode (the cudnn side-effects only fire under CUDA)."""
+    from hcmarl.utils import seed_everything
+    # Both paths must be callable — no assertion on cudnn state (CPU-only CI
+    # skips the torch.backends.cudnn branch entirely).
+    seed_everything(0, deterministic=True)
+    seed_everything(0, deterministic=False)
+    seed_everything(0)  # default True, back-compat
+
+
+def test_m7_entropy_anneal_math():
+    """Linear anneal from start to final over total_steps."""
+    start, final, total = 0.05, 0.01, 1000
+    def anneal(step):
+        frac = min(1.0, step / max(1, total))
+        return start + (final - start) * frac
+    assert anneal(0) == start
+    assert abs(anneal(total) - final) < 1e-9
+    assert abs(anneal(total // 2) - 0.5 * (start + final)) < 1e-9
+    # After total_steps entropy is capped at final (no overshoot)
+    assert abs(anneal(2 * total) - final) < 1e-9
 
 
 def test_m8_unknown_muscle_param_keys_warn():

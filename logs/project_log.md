@@ -1353,3 +1353,25 @@ python -m pytest -q                          # full suite, background
 
 **Files changed:** 5 (scripts/train.py, hcmarl/logger.py, tests/test_moderate_tier.py, project_log.md, MEMORY.md)
 **Tests:** 427 passed, 1 skipped, 0 failed (423 baseline + 4 new Moderate-tier)
+
+---
+
+## 2026-04-15 | ~09:55 IST — Phase B Moderate-tier complete (M4, M6, M7)
+
+Finished the Moderate tier in the same autonomous pass. M4: HCMARLLogger now keeps a single open file handle for the entire run and flushes after every episode, replacing the old ~50K open/close cycles over 5M steps. `close()` flushes + closes the handle; four legacy Round 5 / S-37 tests were updated to call `close()` before reading the CSV under TemporaryDirectory, because Windows refuses to delete files that still have open handles. M6: `seed_everything(seed, deterministic=...)` is now a real kwarg with default True; `training.deterministic` in config routes through it so an ablation can flip cudnn.benchmark on without editing source. The M-1 rationale comment stays in-source (Round 9 minor test checks for it). M7: linear entropy annealing — if `algorithm.entropy_coeff_final` is set, train.py interpolates `entropy_coeff -> entropy_coeff_final` over total_steps and writes it into agent.entropy_coeff (or agent.mappo.entropy_coeff for HCMARLAgent) before each PPO update. Configured with 0.05 -> 0.01 in hcmarl_full_config.yaml.
+
+Added 3 more tests to tests/test_moderate_tier.py (persistent CSV handle, seed_everything deterministic kwarg, anneal math). One Round 5 test file (test_round5_s1.py) got close() calls added in four places. Full suite 430 passed, 1 skipped.
+
+**Commands executed (in order):**
+```
+edit hcmarl/logger.py                    # persistent CSV handle + close()
+edit hcmarl/utils.py                     # deterministic kwarg + M-1 comment restore
+edit scripts/train.py                    # env_cfg/train_cfg order, entropy anneal
+edit config/hcmarl_full_config.yaml      # training.deterministic, entropy_coeff_final
+edit tests/test_moderate_tier.py         # 3 new tests
+edit tests/test_round5_s1.py             # close() in 4 legacy tests
+python -m pytest -q                      # 430 passed, 1 skipped
+```
+
+**Files changed:** 7 (logger.py, utils.py, train.py, hcmarl_full_config.yaml, test_moderate_tier.py, test_round5_s1.py, project_log.md)
+**Tests:** 430 passed, 1 skipped, 0 failed (427 baseline + 3 new Moderate-tier)

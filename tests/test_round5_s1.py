@@ -224,6 +224,7 @@ class TestS36:
             # Log with an extra key not in CSV_COLUMNS
             metrics = {"cumulative_reward": 1.0, "unknown_metric_xyz": 99.0}
             logger.log_episode(metrics)
+            logger.close()
             # Read CSV — should NOT contain unknown_metric_xyz
             with open(logger.csv_path) as f:
                 reader = csv.DictReader(f)
@@ -236,6 +237,7 @@ class TestS36:
             logger = HCMARLLogger(log_dir=tmpdir)
             logger.log_episode({"cumulative_reward": 1.0})
             logger.log_episode({"cumulative_reward": 2.0, "lambda": 0.5})
+            logger.close()
             with open(logger.csv_path) as f:
                 lines = f.readlines()
             # Both data lines should have same number of columns as header
@@ -259,10 +261,12 @@ class TestS37:
             logger1 = HCMARLLogger(log_dir=tmpdir)
             logger1.log_episode({"cumulative_reward": 1.0})
             logger1.log_episode({"cumulative_reward": 2.0})
+            logger1.close()
 
             # Simulate crash + restart: new logger instance
             logger2 = HCMARLLogger(log_dir=tmpdir)
             logger2.log_episode({"cumulative_reward": 3.0})
+            logger2.close()
 
             # Should have header + 3 data rows
             with open(os.path.join(tmpdir, "training_log.csv")) as f:
@@ -275,9 +279,11 @@ class TestS37:
         with tempfile.TemporaryDirectory() as tmpdir:
             logger1 = HCMARLLogger(log_dir=tmpdir)
             logger1.log_episode({"cumulative_reward": 1.0})
+            logger1.close()
 
             logger2 = HCMARLLogger(log_dir=tmpdir)
             logger2.log_episode({"cumulative_reward": 2.0})
+            logger2.close()
 
             with open(os.path.join(tmpdir, "training_log.csv")) as f:
                 content = f.read()
@@ -291,6 +297,7 @@ class TestS37:
         with tempfile.TemporaryDirectory() as tmpdir:
             logger = HCMARLLogger(log_dir=tmpdir)
             logger.log_episode({"cumulative_reward": 1.0})
+            logger.close()
             with open(logger.csv_path) as f:
                 header = f.readline().strip()
             assert 'episode' in header
