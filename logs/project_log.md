@@ -1234,3 +1234,99 @@ python scripts/train.py --config config/hcmarl_full_config.yaml --method hcmarl 
 ```
 
 **Files changed:** 23 modified (3 core modules, 2 scripts, 17 configs, 4 test files, log) | **Tests:** 416 passed, 1 skipped, 0 failed | **50K dry run:** Reward +192.6, Cost 0, Safe% 100%, PeakMF 0.376
+
+## 2026-04-15 | ~02:30 IST — Phase B 9-Critical Audit & Fix Pass
+
+Deep audit of the codebase, configs and Colab notebooks looking for every issue
+that could break Phase B training runs or evaluation. Catalogued 9 Critical
+issues, ranked A-Z by dependency, and implemented fixes for all of them in a
+single commit.
+
+C1 (resume correctness): checkpoints previously saved only policy weights, so a
+Colab runtime disconnect would restart training from step 0 with fresh RNG and
+fresh optimizer moments. Added optimizer save/load to MAPPO, MAPPOLagrangian,
+IPPO, HCMARLAgent. Introduced run_state.pt (written next to every checkpoint)
+holding global_step, episode_count, cost_ema, best_reward, theta_max and RNG
+state for numpy/torch/cuda/python. train() restores all of them on resume.
+
+C2: MMICRL pretrain ran before seed_everything — type discovery was
+non-reproducible. Moved seed_everything + random.seed into main() before
+run_mmicrl_pretrain.
+
+C3: evaluate.py rebuilt theta_max from the raw config, bypassing the MMICRL-
+clamp logic in train.py, so eval ran with different thresholds than the policy
+was trained against. Extracted build_per_worker_theta_max helper in utils.py;
+both scripts call it now.
+
+C4/C5: evaluate.py counted violations with a per-muscle-per-worker-per-step
+denominator and tracked only binary violations, while train.py used a
+per-worker-per-step denominator. Harmonized the denominator and added a
+dense_cost_mean metric matching train's dense safety_cost signal.
+
+C6: Colab notebooks had no --drive-backup-dir flag, no assertion that the
+Drive mount actually succeeded. Added the flag to train.py, run_baselines.py,
+run_ablations.py, run_scaling.py and all 4 notebooks. Drive cell now asserts
+/content/drive/MyDrive is writable and exports BACKUP_DIR.
+
+C7: checkpoint_interval was 500_000 in 11 configs — one Colab disconnect
+could cost 500k steps of progress. Dropped to 100_000 everywhere.
+
+C8: train_hcmarl.ipynb cell 12 had a broken parts = ckpt.replace('\', '/').split('/')
+where the single backslash escaped the close-quote, and a literal newline inside
+an f-string. Both fixed via a one-shot patcher script (deleted after use).
+
+C9: on resume, the loaded run_state.pt holds the theta_max the policy was
+trained with. main() now skips MMICRL pretrain when run_state.theta_max is
+present to avoid re-running stochastic type discovery and thus shifting
+thresholds out from under the saved policy.
+
+**Commands executed (in order):**
+```
+# Audit
+Read scripts/train.py, scripts/evaluate.py, hcmarl/utils.py, all 4 agent classes
+Read all 4 notebooks (train_hcmarl, train_baselines, train_ablations, train_scaling)
+Read all 3 runner scripts
+# Fixes
+sed -i 's/checkpoint_interval: 500000/checkpoint_interval: 100000/' config/*.yaml
+python scripts/_patch_notebooks.py                      # one-shot, then removed
+# Verify
+python -m pytest tests/ -x -q                           # 416 passed, 1 skipped
+# Commit
+git add <25 files>
+git commit -m "Phase B critical fixes (C1-C9): ..."
+git push origin master
+```
+
+**Commit:** `d414adf` — 2026-04-15 02:25 IST
+**Files changed:** 25 (5 modules, 4 agents, 4 notebooks, 11 configs, utils, evaluate) | **Tests:** 416 passed, 1 skipped, 0 failed
+
+---
+
+## 2026-04-15 | ~09:15 IST — Phase B Serious-tier fixes (S1-S9 + minor)
+
+Picked up where the Critical tier left off yesterday (commit d414adf). Ran the full audit from the ISSUE.docx handover and resolved every Serious item. The load-bearing one was S1 — MMICRL's raw per-type theta lies below the config floor, so the old hard-clamp collapsed every worker to the config default and MMICRL became a no-op. The fix is a per-muscle monotonic rescale of raw theta into the biomech-feasibility interval [theta_floor, 1.0] (Eq 26 of the math doc), preserving the cross-type ordering MMICRL discovered. Mutual-information collapse (MI < 0.01) is detected and logged — in that case there is no informative heterogeneity and every type falls back to the floor, which the paper must report honestly rather than pretend otherwise. Both raw and rescaled thetas are printed at training time so nothing is hidden. Controlled by `mmicrl.rescale_to_floor` and `mmicrl.mi_collapse_threshold` in the config; legacy hard-clamp remains available for ablation.
+
+S2 — the silent 0.5 fallback for unknown muscles is gone; it now raises ValueError with the list of known muscles, so a broken config fails loudly before training burns GPU hours. S8 — MMICRL.fit now receives n_actions explicitly from len(config.environment.tasks), so the max(action)+1 auto-detect warning no longer appears. S3 — mappo_lag_config.yaml gained a comment block making the dense-cost semantics explicit ("mean excess fatigue above threshold, averaged over workers") so the Lagrangian cost_limit isn't compared to the old binary tuning. S6 and S7 cleaned the stale "6 baselines" language in run_baselines.py and train_baselines.ipynb markdown. S5 removed the cu121 index-url from all four Colab notebooks (current Colab ships cu128; pinning cu121 caused either downgrade churn or CPU fallback). S9 prepends a Drive-mount assertion to every training cell so a silent unmount between the mount cell and the training cell fails loudly instead of writing to an ephemeral /content/drive/MyDrive stub. run_baselines.py now propagates a non-zero exit when any sub-run failed.
+
+Added tests/test_serious_tier.py covering rescale ordering, feasibility, MI-collapse fallback, two-cluster distinctness, S2 raise-on-unknown-muscle, S8 n_actions passthrough, and the legacy hard-clamp path. 7 new tests, all pass. Full suite: 423 passed, 1 skipped — no regressions against the 416 baseline.
+
+**Commands executed (in order):**
+```
+# Read handover files
+python -c "from docx import Document; ..."  # extract ISSUE.docx
+# Edits
+edit hcmarl/utils.py                  # _get_floor, _rescale_into_feasibility, rescale_to_floor kwarg
+edit scripts/train.py                 # n_actions passthrough, MI-collapse warning, rescale wiring
+edit scripts/evaluate.py              # mirror rescale flag for train/eval parity
+edit scripts/run_baselines.py         # docstring, exit-code propagation
+edit config/hcmarl_full_config.yaml   # rescale_to_floor, mi_collapse_threshold
+edit config/mappo_lag_config.yaml     # dense-cost semantics comment
+python - <<PY  # patch 4 notebooks (cu121 removal, stale method count, drive-mount assertion)
+write tests/test_serious_tier.py       # 7 new tests
+# Verify
+python -m pytest tests/test_serious_tier.py -v
+python -m pytest -q                   # full suite
+```
+
+**Files changed:** 13 (utils.py, train.py, evaluate.py, run_baselines.py, 2 configs, 4 notebooks, new test file, project_log.md, MEMORY.md)
+**Tests:** 423 passed, 1 skipped, 0 failed (416 baseline + 7 new Serious-tier)

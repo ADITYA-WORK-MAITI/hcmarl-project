@@ -18,6 +18,11 @@ algorithm:
   batch_size: 256
   hidden_dim: 64
   critic_hidden_dim: 128
+  # Dense cost semantics (S3): step cost = mean_a (sum_m max(0, MF_m - theta_m))
+  #   — mean excess fatigue above per-muscle threshold, averaged over workers.
+  # Target: mean per-step dense cost <= cost_limit over an episode.
+  # Old binary semantics (fraction of muscle-step slots violated) is NOT used
+  # here; do not compare this value to prior binary-cost Lagrangian tunings.
   cost_limit: 0.1
   lambda_lr: 0.005
   lambda_init: 0.5

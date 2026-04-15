@@ -61,8 +61,11 @@ def _build_eval_env(cfg, mmicrl_results=None, method="hcmarl"):
     config_theta_defaults = env_cfg.get("theta_max", {}) or {}
     # Shared helper applies the same clamp-to-floor logic train.py uses
     # so the eval env thresholds match what the policy was trained under.
+    mmicrl_cfg = cfg.get("mmicrl", {})
     theta_max = build_per_worker_theta_max(
         mmicrl_results, config_theta_defaults, n_workers, method,
+        rescale_to_floor=bool(mmicrl_cfg.get("rescale_to_floor", True)),
+        mi_collapse_threshold=float(mmicrl_cfg.get("mi_collapse_threshold", 0.01)),
     )
     # Fall back to config flat dict for baselines / no-MMICRL runs
     if theta_max is None or (isinstance(theta_max, dict) and not theta_max):

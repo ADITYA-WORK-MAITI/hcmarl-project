@@ -72,6 +72,14 @@ logging:
 # MMICRL CFDE type discovery (math doc Sec 4, Remark 7.2).
 # Pre-trains on WSD4FEDSRM calibrated profiles; per-type theta_max
 # thresholds are injected into the env before RL begins.
+# rescale_to_floor=true: monotonic per-muscle rescale of raw MMICRL theta
+#   into [floor_m, 1.0] preserving cross-type ordering (Eq 26 feasibility).
+#   Raw thetas are typically below floor on single-muscle Path G demos,
+#   so hard-clamping would wipe out the MMICRL contribution. See
+#   hcmarl.utils.build_per_worker_theta_max for details.
+# mi_collapse_threshold: if MMICRL mutual_information < this value,
+#   latent types are treated as non-informative and effective theta
+#   falls back to the floor for every type (warning logged at train time).
 mmicrl:
   enabled: true
   n_types: 3              # initial guess; overridden by BIC if auto_select_k=true
@@ -83,3 +91,5 @@ mmicrl:
   lambda2: 1.0
   hidden_dims: [64, 64]
   use_fixed_theta: false
+  rescale_to_floor: true
+  mi_collapse_threshold: 0.01

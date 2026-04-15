@@ -1,6 +1,6 @@
 """
 HC-MARL Phase 4 (#68): Batch Baseline Launcher
-Iterate over 6 baselines x 5 seeds, train each, checkpoint.
+Iterate over 3 baselines (MAPPO, IPPO, MAPPO-Lag) x 5 seeds, train each, checkpoint.
 
 Usage:
     python scripts/run_baselines.py --device cuda
@@ -34,6 +34,7 @@ def main():
     total = len(args.methods) * len(args.seeds)
     print(f"Running {total} training jobs: {len(args.methods)} methods x {len(args.seeds)} seeds")
 
+    failures = []
     for i, method in enumerate(args.methods):
         for j, seed in enumerate(args.seeds):
             run_id = i * len(args.seeds) + j + 1
@@ -59,10 +60,14 @@ def main():
                 result = subprocess.run(cmd)
                 if result.returncode != 0:
                     print(f"  FAILED (exit code {result.returncode})")
+                    failures.append((method, seed, result.returncode))
                 else:
                     print(f"  DONE")
 
     print(f"\nAll {total} jobs {'would be ' if args.dry_run else ''}complete.")
+    if failures:
+        print(f"{len(failures)} failed: {failures}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

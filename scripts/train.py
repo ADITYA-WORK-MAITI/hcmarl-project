@@ -228,7 +228,11 @@ def run_mmicrl_pretrain(cfg, log_dir="logs"):
         auto_select_k=auto_select_k,
         k_range=k_range,
     )
-    results = mmicrl.fit(collector)
+    # S8: pass action-space size explicitly (derived from config tasks)
+    # so MMICRL does not rely on max(action)+1 auto-detection.
+    env_tasks = cfg.get("environment", {}).get("tasks", {})
+    n_actions = len(env_tasks) if env_tasks else None
+    results = mmicrl.fit(collector, n_actions=n_actions)
 
     # Print results
     print(f"\n--- MMICRL Type Discovery Results ---")
@@ -237,9 +241,22 @@ def run_mmicrl_pretrain(cfg, log_dir="logs"):
     print(f"  Type proportions: {[f'{p:.2f}' for p in results['type_proportions']]}")
     print(f"  Mutual information I(tau;z): {results['mutual_information']:.4f}")
     print(f"  Objective value: {results['objective_value']:.4f}")
-    print(f"  Learned thresholds per type:")
+    print(f"  Learned thresholds per type (raw):")
     for k, thetas in results['theta_per_type'].items():
         print(f"    Type {k}: {{{', '.join(f'{m}: {v:.3f}' for m, v in thetas.items())}}}")
+
+    # S1: MI-collapse diagnostic. If MI < 1e-2, latent types are behaviorally
+    # indistinguishable from the demos, so rescaled thresholds collapse to the
+    # config floor (see hcmarl.utils.build_per_worker_theta_max). Paper must
+    # report this honestly; training still proceeds under the config defaults.
+    mi_collapse_threshold = float(mmicrl_cfg.get("mi_collapse_threshold", 0.01))
+    if float(results.get("mutual_information", 0.0)) < mi_collapse_threshold:
+        print(f"  WARNING: MI ({results['mutual_information']:.4f}) < "
+              f"{mi_collapse_threshold} -- latent types are behaviorally "
+              f"indistinguishable on this demo set. Effective per-worker "
+              f"theta will fall back to config floors (no MMICRL "
+              f"contribution). Consider multi-muscle demos or lambda1 "
+              f"tuning to restore discrimination.")
 
     # Save MMICRL results
     mmicrl_log_dir = os.path.join(log_dir, "mmicrl")
@@ -291,15 +308,21 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
         print(f"Resume: reusing saved theta_max from run_state (step "
               f"{resume_state.get('global_step', 0):,})")
     else:
+        mmicrl_cfg = cfg.get("mmicrl", {})
+        rescale = bool(mmicrl_cfg.get("rescale_to_floor", True))
+        mi_thresh = float(mmicrl_cfg.get("mi_collapse_threshold", 0.01))
         theta_max = build_per_worker_theta_max(
             mmicrl_results, config_theta_defaults, n_workers, method,
+            rescale_to_floor=rescale, mi_collapse_threshold=mi_thresh,
         )
         if mmicrl_results and method == "hcmarl" and isinstance(theta_max, dict) and any(
             isinstance(v, dict) for v in theta_max.values()
         ):
             n_types = len(mmicrl_results.get("theta_per_type", {}))
+            mode = "rescaled into [floor,1]" if rescale else "hard-clamped to floor"
             print(f"Using MMICRL-learned thresholds for {n_workers} workers "
-                  f"({n_types} types, clamped to config floor: {dict(config_theta_defaults)})")
+                  f"({n_types} types, {mode}; floors: {dict(config_theta_defaults)})")
+            print(f"  Effective per-worker theta_max: {theta_max}")
 
     # Directories
     run_name = f"{method}_seed{seed}"
