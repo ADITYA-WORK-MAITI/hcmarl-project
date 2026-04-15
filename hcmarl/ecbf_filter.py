@@ -314,6 +314,12 @@ class ECBFFilter:
         constraints.append(C_var >= 0)
 
         # ----- Solve -----
+        # B2 (Batch B pre-critic): warm_start=True has no effect here because
+        # cp.Problem is rebuilt on every filter() call — OSQP has no prior
+        # workspace to warm from. This becomes meaningful only after the
+        # Batch C DPP migration caches Problem + Parameter across calls;
+        # at that point warm_start must be disabled across episode resets
+        # to avoid stale ADMM iterates (CVXPY issues #620 and #854).
         problem = cp.Problem(objective, constraints)
         try:
             problem.solve(solver=solver, warm_start=True)
