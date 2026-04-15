@@ -25,6 +25,16 @@ import numpy as np
 
 from hcmarl.three_cc_r import MuscleParams, ThreeCCrState
 
+# Penalty on slack variables in the CBF-QP (Ames et al. 2019,
+# "Control Barrier Functions: Theory and Applications", Section IV-B).
+# Large enough that slack is only ever non-zero when strict feasibility
+# is impossible under numerical noise; small enough to stay well-conditioned.
+SLACK_PENALTY: float = 1000.0
+
+# Slack activation tolerance: slack values below this are treated as 0
+# (pure numerical noise from interior-point / ADMM termination).
+SLACK_EPS: float = 1e-6
+
 
 @dataclasses.dataclass
 class ECBFParams:
@@ -83,9 +93,12 @@ class ECBFDiagnostics:
     h_dot: float          # = -F*MA + Reff*MF                       (Eq 13)
     C_upper_ecbf: float   # Upper bound from ECBF constraint (Eq 19)
     C_upper_cbf: float    # Upper bound from resting CBF (Eq 23)
-    qp_status: str        # CVXPY solver status
+    qp_status: str        # CVXPY solver status (verbatim)
     was_clipped: bool     # Whether C_nominal was modified
     infeasible: bool = False  # S-3: True when QP infeasible (mandatory rest)
+    slack_ecbf: float = 0.0   # A1: slack used on ECBF constraint (0 when strictly feasible)
+    slack_cbf: float = 0.0    # A1: slack used on resting-floor constraint
+    used_fallback: bool = False  # A1: True iff C came from analytical fallback, not QP
 
 
 class ECBFFilter:
@@ -264,41 +277,37 @@ class ECBFFilter:
         C_ub_ecbf = self.ecbf_upper_bound(MA, MF, R_eff)
         C_ub_cbf = self.cbf_upper_bound(MA, MF, R_eff)
 
-        # ----- Build QP -----
+        # ----- Build slack-augmented QP (A1) -----
+        # Slack variables s1, s2 >= 0 relax the ECBF and CBF constraints so
+        # the QP is guaranteed strictly feasible under numerical perturbation
+        # (Ames et al. 2019, Sec IV-B). A large penalty SLACK_PENALTY keeps
+        # slack at zero whenever the strict constraints are satisfiable.
         C_var = cp.Variable(1)
+        s_ecbf = cp.Variable(1, nonneg=True)
+        s_cbf = cp.Variable(1, nonneg=True)
 
-        # Objective: minimise ||C - C_nom||^2
-        objective = cp.Minimize(cp.sum_squares(C_var - C_nominal))
+        # Objective: minimise ||C - C_nom||^2 + k*(s1 + s2)
+        objective = cp.Minimize(
+            cp.sum_squares(C_var - C_nominal)
+            + SLACK_PENALTY * (s_ecbf + s_cbf)
+        )
 
         constraints = []
 
-        # Constraint 1: ECBF (Eq 18)
-        # psi_1_dot + alpha2 * psi_1 >= 0
-        # Expanding psi_1_dot = h_ddot + alpha1 * h_dot:
-        #   (-F*C + F^2*MA + Reff*F*MA - Reff^2*MF)
-        #   + alpha1 * (-F*MA + Reff*MF)
-        #   + alpha2 * psi_1
-        #   >= 0
-        #
-        # Rearranging: -F*C + [everything else] >= 0
-        # => -F*C >= -[everything else]
-        #
-        # In CVXPY form: -F * C_var + state_and_gain_terms >= 0
-
+        # Constraint 1: ECBF (Eq 18) with slack relaxation
+        # -F*C + [everything else] + s_ecbf >= 0
         state_terms = F**2 * MA + R_eff * F * MA - R_eff**2 * MF
         a1_h_dot = self._alpha1 * (-F * MA + R_eff * MF)
         a2_psi1 = self._alpha2 * psi1_val
 
         constraints.append(
-            -F * C_var + state_terms + a1_h_dot + a2_psi1 >= 0
+            -F * C_var + state_terms + a1_h_dot + a2_psi1 + s_ecbf >= 0
         )
 
-        # Constraint 2: Resting-floor CBF (Eq 23)
-        # h2_dot >= -alpha3 * h2
-        # Reff*MF - C >= -alpha3 * MR
-        # => C <= Reff*MF + alpha3*MR
+        # Constraint 2: Resting-floor CBF (Eq 23) with slack relaxation
+        # C - s_cbf <= Reff*MF + alpha3*MR
         constraints.append(
-            C_var <= R_eff * MF + self._alpha3 * MR
+            C_var - s_cbf <= R_eff * MF + self._alpha3 * MR
         )
 
         # Constraint 3: Non-negative neural drive
@@ -324,27 +333,49 @@ class ECBFFilter:
                 qp_status="solver_error_fallback",
                 was_clipped=(abs(C_safe - C_nominal) > 1e-9),
                 infeasible=(C_ub_ecbf < 0.0 and C_ub_cbf < 0.0),
+                slack_ecbf=0.0,
+                slack_cbf=0.0,
+                used_fallback=True,
             )
             return C_safe, diag
 
-        if problem.status in ("optimal", "optimal_inaccurate"):
+        # A1: Strict status check. Only "optimal" yields trustworthy C_var.
+        # "optimal_inaccurate" means ADMM stopped before convergence and the
+        # primal residual may be large — C_var.value is not trustworthy for
+        # a safety filter, so we fall back to analytical bounds which are
+        # guaranteed correct for the scalar case.
+        if problem.status == "optimal" and C_var.value is not None:
             C_filtered = float(C_var.value[0])
-            # Final safety clamp (numerical noise)
-            C_filtered = max(0.0, C_filtered)
+            C_filtered = max(0.0, C_filtered)  # final safety clamp
+            slack_ecbf_val = float(s_ecbf.value[0]) if s_ecbf.value is not None else 0.0
+            slack_cbf_val = float(s_cbf.value[0]) if s_cbf.value is not None else 0.0
+            # A1: suppress sub-tolerance slack as numerical noise.
+            if slack_ecbf_val < SLACK_EPS:
+                slack_ecbf_val = 0.0
+            if slack_cbf_val < SLACK_EPS:
+                slack_cbf_val = 0.0
             qp_status = problem.status
-            qp_infeasible = False
+            # "infeasible" here means the strict CBF could not be satisfied
+            # and slack had to be activated to get a solution.
+            qp_infeasible = (slack_ecbf_val > 0.0) or (slack_cbf_val > 0.0)
+            used_fallback = False
         else:
-            # Infeasible or unbounded: force rest (Remark 5.13)
-            C_filtered = 0.0
-            qp_status = problem.status
+            # Non-optimal (inaccurate/infeasible/unbounded/None): C_var may be
+            # garbage. Fall back to the analytical bounds, which are exact
+            # for the scalar QP when feasible and collapse to 0 when not.
+            C_filtered = max(0.0, min(C_nominal, C_ub_ecbf, C_ub_cbf))
+            slack_ecbf_val = 0.0
+            slack_cbf_val = 0.0
+            qp_status = problem.status if problem.status else "unknown"
             qp_infeasible = True
+            used_fallback = True
 
         was_clipped = abs(C_filtered - C_nominal) > 1e-9
 
         # S-3: infeasible flag tracks mandatory rest separately from
-        # was_clipped, which only compares C_nominal to C_filtered.
-        # When C_nominal==0 and QP is infeasible, was_clipped=False
-        # but infeasible=True — mandatory rest is still logged.
+        # was_clipped. With slack variables, infeasible==True means the
+        # strict barrier constraints could not be satisfied without
+        # relaxation (soft violation) — a first-class diagnostic event.
         diag = ECBFDiagnostics(
             C_nominal=C_nominal,
             C_filtered=C_filtered,
@@ -358,6 +389,9 @@ class ECBFFilter:
             qp_status=qp_status,
             was_clipped=was_clipped,
             infeasible=qp_infeasible,
+            slack_ecbf=slack_ecbf_val,
+            slack_cbf=slack_cbf_val,
+            used_fallback=used_fallback,
         )
 
         return C_filtered, diag
