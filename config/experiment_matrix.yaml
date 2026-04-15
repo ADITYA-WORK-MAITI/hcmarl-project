@@ -1,0 +1,54 @@
+# Canonical experiment matrix for the ICML 2026 HiL workshop submission.
+#
+# Batch D anchor: this file is the single source of truth for WHICH configs
+# and seeds the headline runs use. scripts/aggregate_learning_curves.py and
+# the Gate D test read this file — if you add a new config or change the
+# seed count, change it HERE, not in ad-hoc shell scripts.
+#
+# Budget sanity (E2E Networks L4 @ INR 49/hr):
+#   headline:  4 methods x 10 seeds x ~30 min = 20 hr x INR 49 = INR ~980
+#   ablation:  5 configs x 5 seeds x ~30 min  = 12.5 hr x INR 49 = INR ~613
+#   totals under the INR 2,330 envelope from the Phase C strategy note.
+
+# D1 — headline (HC-MARL vs baselines): 10 seeds each.
+# Seed list is literal — aggregation is strictly keyed on this list, so if
+# a run is missing its CSV the aggregator raises rather than silently
+# averaging over fewer seeds.
+headline:
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  methods:
+    hcmarl:    {config: config/hcmarl_full_config.yaml, method: hcmarl}
+    mappo:     {config: config/mappo_config.yaml,        method: mappo}
+    ippo:      {config: config/ippo_config.yaml,         method: ippo}
+    mappo_lag: {config: config/mappo_lag_config.yaml,    method: mappo_lag}
+
+# D2 — attribution ablation: which component contributes what.
+# 5 rungs from plain MAPPO up to full HC-MARL. 5 seeds per rung = 25 runs.
+# The rungs map to existing configs (no new YAML needed):
+#   MAPPO (bare)          -> mappo_config.yaml
+#   + ECBF                -> ablation_no_nswf.yaml   (ecbf on,  nswf off)
+#   + NSWF                -> ablation_no_ecbf.yaml   (ecbf off, nswf on)
+#   + ECBF + NSWF         -> ablation_no_mmicrl.yaml (both on, mmicrl off)
+#   + full HC-MARL        -> hcmarl_full_config.yaml
+ablation:
+  seeds: [0, 1, 2, 3, 4]
+  rungs:
+    - {name: mappo,            config: config/mappo_config.yaml,        method: mappo}
+    - {name: plus_ecbf,        config: config/ablation_no_nswf.yaml,    method: hcmarl}
+    - {name: plus_nswf,        config: config/ablation_no_ecbf.yaml,    method: hcmarl}
+    - {name: plus_ecbf_nswf,   config: config/ablation_no_mmicrl.yaml,  method: hcmarl}
+    - {name: full_hcmarl,      config: config/hcmarl_full_config.yaml,  method: hcmarl}
+
+# D3 — learning-curve anchor points (steps).
+# Every CSV must have a row with global_step >= each anchor. Aggregator
+# reports IQM + stratified bootstrap 95% CI at each anchor per method.
+curve_anchors_steps: [1000000, 3000000, 5000000]
+
+# D4 — lazy-agent kill-switch parameters.
+# Per-agent task-selection entropy is logged every episode. If any agent's
+# entropy stays below `threshold` for a continuous window >= `window_steps`
+# consecutive steps, training raises a lazy-agent flag and halts the run.
+# The threshold is informed by Liu et al. ICML 2023 (lazy-agent pathology).
+lazy_agent_kill_switch:
+  threshold: 0.1
+  window_steps: 100000

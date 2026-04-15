@@ -31,6 +31,11 @@ class HCMARLLogger:
         "safety_autonomy_index", "ecbf_interventions",
         "lambda", "cost_ema", "actor_loss", "critic_loss", "cost_critic_loss",
         "policy_loss", "value_loss", "entropy",
+        # D4: per-agent task-selection entropy + lazy-agent kill-switch flag.
+        # `per_agent_entropy_min` is what the kill-switch watches — if any one
+        # agent collapses to a single-task policy, the MEAN can stay healthy
+        # while the MIN drops below threshold.
+        "per_agent_entropy_mean", "per_agent_entropy_min", "lazy_agent_flag",
     ])
 
     def __init__(self, log_dir="logs", use_wandb=False, wandb_project="hcmarl",

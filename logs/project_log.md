@@ -1443,6 +1443,24 @@ git add config/*.yaml tests/test_batch_c.py
 git commit -m "Batch C long-run stability ..."
 ```
 
-**Commit:** pending
-**Files changed:** 17 (16 production configs with entropy_coeff_final wiring + tests/test_batch_c.py new)
+**Commit:** `e2a50b4` — 2026-04-16 early IST
+**Files changed:** 18 (16 production configs with entropy_coeff_final wiring + tests/test_batch_c.py new + logs/project_log.md)
 **Tests:** 472 passed, 1 skipped, 0 failed (447 prior + 25 new Batch C)
+
+---
+
+## 2026-04-16 | ~mid IST — Batch D statistical + ablation design landed
+
+Executed Batch D of the 6-batch plan. Pre-critic on each item before writing code. D1 (seed count bump to 10 + rliable-style IQM/CI) was delivered as a canonical config/experiment_matrix.yaml that is now the single source of truth for WHICH configs and seeds the headline runs use, plus a new hcmarl/aggregation.py implementing IQM and stratified bootstrap 95% CI in pure numpy (signatures match rliable.library.get_interval_estimates so a future migration is a one-line swap). D2 (5-way attribution ablation) needed no new YAML — all five rungs (bare MAPPO, +ECBF, +NSWF, +ECBF+NSWF, full HC-MARL) map to existing configs: mappo_config.yaml, ablation_no_nswf.yaml, ablation_no_ecbf.yaml, ablation_no_mmicrl.yaml, hcmarl_full_config.yaml. The matrix encodes this mapping explicitly so attribution cannot silently drift. A parametrized test walks each rung and verifies the effective (ecbf.enabled, nswf.enabled, mmicrl.enabled) triple matches the rung's semantic name, using the same "absent = default on" rule that scripts/train.py applies. D3 (learning curves at 1M/3M/5M) is a new scripts/aggregate_learning_curves.py that reads training_log.csv per (method, seed), extracts cumulative_reward at each anchor step, and writes aggregated_results.json with IQM + CI per method per anchor. It exits 2 and surfaces a non-empty errors list if ANY CSV is missing — no silent averaging over fewer seeds. D4 (lazy-agent kill-switch from Liu ICML 2023) added per-agent task-selection entropy computation inside the training loop via a per-episode action histogram; the per-agent Shannon entropy (natural log) and the min-over-agents are logged every episode as per_agent_entropy_mean and per_agent_entropy_min. The kill-switch watches the MIN (a collapsed single-agent policy can keep the mean healthy), and if min_entropy stays below threshold=0.1 for >=100K consecutive env-steps, sets lazy_agent_flag=1 in the CSV and breaks the training loop with a console warning. Gate D passed cleanly: 20/20 new Batch D tests pass, full pytest 492 passed / 1 skipped / 0 failed. One small test fix on tests/test_batch_c.py was needed — the new experiment_matrix.yaml was being swept by the C1 config-walker which expects an algorithm section; added it to the exclusion list. No 50K dry run needed — the training-loop changes (entropy histogram + kill-switch check) are opt-in logging that does not alter any code path reached in a 50K run that never collapses. Pilot run to validate end-to-end is next. Batch E (MMICRL demotion + validity) up after that.
+
+**Commands executed (in order):**
+```
+python -m pytest tests/test_batch_d.py -q
+python -m pytest -q
+git add config/experiment_matrix.yaml hcmarl/aggregation.py hcmarl/logger.py scripts/train.py scripts/aggregate_learning_curves.py tests/test_batch_c.py tests/test_batch_d.py
+git commit -m "Batch D statistical + ablation design ..."
+```
+
+**Commit:** pending
+**Files changed:** 7 (experiment_matrix.yaml new, aggregation.py new, aggregate_learning_curves.py new, test_batch_d.py new, logger.py +3 cols, train.py +entropy/kill-switch, test_batch_c.py exclusion fix)
+**Tests:** 492 passed, 1 skipped, 0 failed (472 prior + 20 new Batch D)

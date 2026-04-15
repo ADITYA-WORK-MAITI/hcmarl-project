@@ -423,6 +423,18 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     next_checkpoint_step = checkpoint_interval
     start_time = time.time()
 
+    # D4: lazy-agent kill-switch state. Parameters live in
+    # config/experiment_matrix.yaml; the training config may override them
+    # in a `lazy_agent_kill_switch` block.
+    lac = cfg.get("lazy_agent_kill_switch", {})
+    lazy_threshold = float(lac.get("threshold", 0.1))
+    lazy_window = int(lac.get("window_steps", 100_000))
+    # Number of consecutive env-steps during which min-agent entropy
+    # has stayed below `lazy_threshold`. Reset when any episode comes
+    # in above threshold.
+    lazy_low_streak = 0
+    lazy_agent_flag = 0
+
     # Restore counters + RNG state from run_state (if resuming).
     # Agent weights + optimizer state were already loaded above via agent.load().
     if resume_state is not None:
@@ -464,6 +476,10 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
         forced_rests = 0
         total_ecbf_interventions = 0
         total_ecbf_opportunities = 0  # muscles where C_nominal > 0
+        # D4: per-agent task-selection histogram for this episode — used to
+        # compute per-agent entropy (lazy-agent diagnostic, Liu ICML 2023).
+        action_hist = np.zeros((n_workers, max(2, int(env.n_tasks))),
+                               dtype=np.int64)
 
         for step in range(max_steps):
             global_state = env._get_global_obs()
@@ -496,6 +512,17 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
             else:
                 actions = result
                 log_probs, value, cost_value = {}, 0.0, 0.0
+
+            # D4: tally per-agent task selection for entropy diagnostic.
+            # Continuous mode does not produce discrete task picks here —
+            # skip the histogram in that regime (the NSWF allocator makes
+            # the task decision instead, which is logged elsewhere).
+            if env_action_mode == "discrete":
+                for agent_id, a in actions.items():
+                    idx = int(agent_id.split("_")[1])
+                    a_int = int(a) if np.isscalar(a) else int(np.asarray(a).item())
+                    if 0 <= idx < n_workers and 0 <= a_int < action_hist.shape[1]:
+                        action_hist[idx, a_int] += 1
 
             # Step environment
             next_obs, rewards, terms, truncs, infos = env.step(actions)
@@ -619,6 +646,30 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
         n = n_workers
         jain = float((tasks_per_worker.sum()**2) / (n * (tasks_per_worker**2).sum() + 1e-8)) if tasks_per_worker.sum() > 0 else 1.0
 
+        # D4: per-agent task-selection entropy (Shannon, natural log).
+        # H_i = -sum_a p_i(a) log p_i(a). Uniform over K tasks -> log(K).
+        # A collapsed single-task agent has H_i = 0.
+        per_agent_entropy = np.zeros(n_workers, dtype=np.float64)
+        for i in range(n_workers):
+            counts = action_hist[i]
+            tot = counts.sum()
+            if tot > 0:
+                p = counts / tot
+                nz = p[p > 0]
+                per_agent_entropy[i] = float(-(nz * np.log(nz)).sum())
+        ent_mean = float(per_agent_entropy.mean())
+        ent_min = float(per_agent_entropy.min())
+
+        # Kill-switch: the MIN-over-agents entropy is the signal. If it
+        # stays below threshold for >= window_steps consecutive env steps,
+        # we flag the run as lazy-agent-collapsed and stop.
+        if ent_min < lazy_threshold:
+            lazy_low_streak += episode_steps
+        else:
+            lazy_low_streak = 0
+        if lazy_low_streak >= lazy_window:
+            lazy_agent_flag = 1
+
         # Safety Autonomy Index: fraction of work-muscle slots NOT clipped by ECBF
         sai = 1.0 - (total_ecbf_interventions / max(1, total_ecbf_opportunities))
 
@@ -642,9 +693,23 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
         # M5: always log cost_ema — the Lagrangian state variable drives lambda
         # and is needed to reproduce / debug dual-variable trajectories.
         ep_metrics["cost_ema"] = float(cost_ema)
+        # D4: persist per-agent entropy + kill-switch signal in CSV.
+        ep_metrics["per_agent_entropy_mean"] = ent_mean
+        ep_metrics["per_agent_entropy_min"] = ent_min
+        ep_metrics["lazy_agent_flag"] = int(lazy_agent_flag)
         ep_metrics.update(update_info)
 
         logger.log_episode(ep_metrics)
+
+        # D4: kill-switch trip. Stops the training loop with a clear
+        # marker in the CSV; the caller can decide what to do (the
+        # pilot aggregator flags such runs, the main sweep can retry
+        # with a different seed).
+        if lazy_agent_flag:
+            print(f"[lazy-agent kill-switch] min agent entropy "
+                  f"{ent_min:.4f} < {lazy_threshold} for "
+                  f">= {lazy_window:,} consecutive steps — halting run.")
+            break
 
         # Print progress
         if episode_count % 50 == 0:

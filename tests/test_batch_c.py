@@ -40,7 +40,7 @@ CONFIG_DIR = pathlib.Path(__file__).resolve().parent.parent / "config"
 PRODUCTION_CONFIGS = sorted(
     [p for p in CONFIG_DIR.glob("*.yaml")
      if p.name not in ("default_config.yaml", "task_profiles.yaml",
-                       "dry_run_50k.yaml")]
+                       "dry_run_50k.yaml", "experiment_matrix.yaml")]
 )
 
 
