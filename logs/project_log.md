@@ -1494,3 +1494,27 @@ git commit -m "Batch E MMICRL demotion + validity ..."
 
 **Files changed:** 6 (mmicrl.py +k_selection/heldout_nll/WAIC/_kmeans_init fix, real_data_calibration.py +bootstrap_mi_diagnostic, train.py forwards k_selection, hcmarl_full_config.yaml k_selection=heldout_nll, test_batch_e.py new, project_log.md)
 **Tests:** 501 passed, 1 skipped, 0 failed (492 prior + 9 new Batch E)
+
+## 2026-04-16 | ~07:00 IST — Batch F narrative armor (F1 rebuttal + F2 NIOSH)
+
+Closed out the 6-batch plan with Batch F ("Narrative armor"). Two reviewer concerns that are predictable enough to pre-answer were turned into citable deliverables instead of handwaves. No code in the RL hot path changed; this batch is documentation + calibration infrastructure.
+
+F1 — pre-rehearsed rebuttal for "why not merge Cerqueira + NinaPro to get K ≥ 2 on real data?". Wrote docs/rebuttal_armor.md with a four-reason refusal, each independently sufficient: (1) Cerqueira reports %MVIC and NinaPro reports raw EMG-RMS without per-subject MVIC normalisation, so any merge requires injecting an estimator whose bias MMICRL would then "discover" as structure; (2) the task sets are disjoint (hand grasps vs shoulder dynamic rotation), so a flow trained on the concatenation learns two disconnected manifolds and MMICRL's "K=2 cohorts" would just be identifying datasets, not worker types; (3) the NinaPro cohort covariates (age, sex) are not matched to warehouse workers and ComBat harmonisation fails when batch effect is confounded with biological signal (Bayer 2022); (4) even a correctly-applied ComBat does not preserve tail quantiles (Zindler 2020), and ECBF's θ_max lives in the upper tail of MF so a merged dataset gives the wrong threshold distribution while still making MI look stronger — a textbook false positive. Ends with an appendix sanity-check protocol the reviewer can ask for.
+
+F2 — NIOSH Revised Lifting Equation calibration for the two lifting tasks in config/hcmarl_full_config.yaml. Wrote scripts/niosh_calibration.py with the full Waters et al. 1993 RLE: six multipliers (HM, VM, DM, AM, FM, CM), NIOSHTask dataclass with rwl_kg() and lifting_index(), and a ±20% sensitivity sweep on all continuous geometry inputs. Ran it on canonical warehouse geometry: heavy_lift (15 kg, H=35, V=80, D=70, A=30, f=2/min, 2 hr, fair coupling) → RWL = 10.87 kg, LI = 1.38 ("elevated risk"); carry (10 kg, H=30, V=95, D=40, A=15, f=3/min, 2 hr, good coupling) → RWL = 12.64 kg, LI = 0.79 ("acceptable for most workers"). Our config's shoulder %MVIC values (0.45 and 0.25) align with Granata & Marras 1995 Table 3 at exactly those LI levels, so no calibration change was needed. ±20% sweep keeps heavy_lift in the elevated bracket [1.10, 1.66] and carry in the acceptable bracket [0.63, 0.95] on every continuous input. The four non-lifting tasks (light_sort, overhead_reach, push_cart, rest) don't fit NIOSH's scope and are documented against Nordander 2000 / Anton 2001 / Hoozemans 2004 / de Looze 2000 inline in the config.
+
+Added tests/test_batch_f.py with 14 tests that pin every multiplier against Waters 1993 Table 1/5 at canonical inputs, assert the two task LI values match what rebuttal_armor.md cites (so the paper table and the code can never silently drift apart), and check that the sensitivity-sweep structure is complete on all six geometry inputs and that heavy_lift stays in the elevated bracket + carry in the acceptable bracket across the full ±20% sweep. All 14 pass.
+
+Gate F passed: full pytest 515 passed, 1 skipped, 0 failed (501 prior + 14 Batch F). 6-batch plan is complete — A (safety-critical), B (determinism), C (long-run stability), D (stats + ablation design), E (MMICRL validity), F (narrative armor) — all committed with green gates.
+
+**Commands executed (in order):**
+```
+python scripts/niosh_calibration.py
+python -m pytest tests/test_batch_f.py -v
+python -m pytest -q
+git add scripts/niosh_calibration.py docs/rebuttal_armor.md tests/test_batch_f.py logs/project_log.md
+git commit -m "Batch F narrative armor ..."
+```
+
+**Files changed:** 4 (scripts/niosh_calibration.py new, docs/rebuttal_armor.md new, tests/test_batch_f.py new, logs/project_log.md)
+**Tests:** 515 passed, 1 skipped, 0 failed (501 prior + 14 Batch F)
