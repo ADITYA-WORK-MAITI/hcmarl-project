@@ -408,7 +408,16 @@ class CFDE(nn.Module):
                 np.sum((features - centroids[j]) ** 2, axis=1)
                 for j in range(k)
             ], axis=0)
-            probs = dists / (dists.sum() + 1e-10)
+            # If all distances are ~0 (identical or duplicated features after
+            # bootstrap resampling), kmeans++ probs degenerate to zeros-only.
+            # Fall back to uniform so rng.choice receives a valid distribution.
+            total = dists.sum()
+            if total < 1e-9:
+                probs = np.full(n, 1.0 / n)
+            else:
+                probs = dists / total
+                # Re-normalise to eliminate round-off (numpy requires sum==1).
+                probs = probs / probs.sum()
             centroids[k] = features[rng.choice(n, p=probs)]
         for _ in range(max_iter):
             dists = np.stack([
@@ -660,10 +669,31 @@ class MMICRL:
         device: str = 'cpu',
         auto_select_k: bool = False,
         k_range: Optional[tuple] = None,
+        k_selection: str = "heldout_nll",
+        heldout_frac: float = 0.2,
     ):
         self.n_types = n_types
         self.auto_select_k = auto_select_k
         self.k_range = k_range or (1, 5)
+        # E2 (Batch E): Watanabe (2013) singular-model theorem shows BIC is
+        # invalid for normalizing flows because the Fisher information matrix
+        # degenerates — mixture components are not locally identifiable. We
+        # therefore default to held-out log-likelihood (Gelman-Hwang-Vehtari
+        # 2014 §3), which is asymptotically valid for singular models. BIC
+        # remains available via k_selection="bic" for ablation / legacy runs,
+        # and WAIC is computed post-hoc across the K sweep so the selection
+        # score is directly comparable to heldout_nll.
+        _valid_ksel = ("heldout_nll", "waic", "bic")
+        if k_selection not in _valid_ksel:
+            raise ValueError(
+                f"k_selection must be one of {_valid_ksel}, got {k_selection!r}"
+            )
+        self.k_selection = k_selection
+        if not (0.05 <= heldout_frac <= 0.5):
+            raise ValueError(
+                f"heldout_frac must be in [0.05, 0.5], got {heldout_frac}"
+            )
+        self.heldout_frac = heldout_frac
         # Remark 4.4 (Mathematical Modelling, Section 4): lambda1 = lambda2
         # yields pure MI maximisation (Eq 11). When lambda1 != lambda2, the
         # residual H[pi(tau)] term requires joint entropy estimation which is
@@ -938,11 +968,148 @@ class MMICRL:
 
         return theta_per_type
 
+    def _fit_cfde_on_subset(self, features_norm, traj_indices, k, n_demos,
+                             train_mask, n_epochs):
+        """Fit a fresh CFDE on the rows selected by `train_mask`.
+
+        Returns the trained CFDE and the onehot tensor used for training —
+        the caller can then call log_prob on a disjoint mask (heldout NLL)
+        or on the same mask (BIC in-sample log-lik).
+
+        Used by both _compute_bic and _compute_heldout_nll so their only
+        difference is WHICH rows they evaluate on, not how the flow is fit.
+        """
+        total_steps, feat_dim = features_norm.shape
+        cfde_k = CFDE(
+            input_dim=feat_dim, n_types=k,
+            hidden_dims=self.hidden_dims, device=self.device,
+        )
+        x = torch.tensor(features_norm, dtype=torch.float32, device=self.device)
+        optimizer = torch.optim.Adam(cfde_k.parameters(), lr=self.lr)
+
+        # k-means warm-start from trajectory-mean features restricted to train
+        traj_summary = np.zeros((n_demos, feat_dim), dtype=np.float32)
+        for i in range(n_demos):
+            # intersect trajectory i with the train mask
+            m_train_i = (traj_indices == i) & train_mask
+            if m_train_i.any():
+                traj_summary[i] = features_norm[m_train_i].mean(axis=0)
+            else:
+                # trajectory entirely in heldout — use its full mean so
+                # the assignment is still defined, but it won't appear
+                # in any training batch below
+                m_any = traj_indices == i
+                if m_any.any():
+                    traj_summary[i] = features_norm[m_any].mean(axis=0)
+        traj_assignments = cfde_k._kmeans_init(traj_summary)
+        step_assignments = traj_assignments[traj_indices]
+        z_onehot = torch.nn.functional.one_hot(
+            torch.tensor(step_assignments, device=self.device), k
+        ).float()
+
+        train_idx = np.where(train_mask)[0]
+        train_idx_t = torch.tensor(train_idx, dtype=torch.long, device=self.device)
+        batch_size = min(256, len(train_idx))
+        for _ in range(n_epochs):
+            cfde_k.flow.train()
+            perm = train_idx_t[torch.randperm(len(train_idx_t), device=self.device)]
+            for i in range(0, len(perm), batch_size):
+                idx = perm[i:i + batch_size]
+                log_p = cfde_k.log_prob(x[idx], z_onehot[idx])
+                loss = -log_p.mean()
+                optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(cfde_k.parameters(), 1.0)
+                optimizer.step()
+        cfde_k.flow.eval()
+        return cfde_k, x, z_onehot
+
+    def _compute_heldout_nll(self, step_features, traj_indices, n_demos, k):
+        """Held-out negative log-likelihood score (Gelman-Hwang-Vehtari 2014).
+
+        Partition trajectories (not steps) into a (1-heldout_frac) train set
+        and a heldout_frac eval set, fit CFDE on train, and report
+        -mean(log p(x | z)) on the heldout steps. Lower = better.
+
+        Trajectory-level split is required because trajectory-mean features
+        are the k-means warm-start; splitting at step level would leak the
+        heldout trajectories' means into training. Singular-model theorem
+        (Watanabe 2013): this is the only asymptotically valid model-selection
+        score for normalizing flows.
+        """
+        rng = np.random.default_rng(0)
+        n_heldout = max(1, int(round(n_demos * self.heldout_frac)))
+        perm = rng.permutation(n_demos)
+        heldout_trajs = set(perm[:n_heldout].tolist())
+        train_mask = np.array(
+            [int(t) not in heldout_trajs for t in traj_indices],
+            dtype=bool,
+        )
+        if train_mask.sum() == 0 or (~train_mask).sum() == 0:
+            # pathological tiny-N case: fall back to BIC-style in-sample lik
+            train_mask[:] = True
+        features_norm = (step_features - step_features.mean(axis=0)) / \
+                        (step_features.std(axis=0) + 1e-8)
+        n_epochs = min(50, self.n_iterations)
+        cfde_k, x, z_onehot = self._fit_cfde_on_subset(
+            features_norm, traj_indices, k, n_demos, train_mask, n_epochs,
+        )
+        heldout_mask = ~train_mask
+        if not heldout_mask.any():
+            # degenerate — report in-sample
+            with torch.no_grad():
+                log_lik = cfde_k.log_prob(x, z_onehot).mean().item()
+            return float(-log_lik)
+        heldout_idx = np.where(heldout_mask)[0]
+        idx_t = torch.tensor(heldout_idx, dtype=torch.long, device=self.device)
+        with torch.no_grad():
+            log_lik = cfde_k.log_prob(x[idx_t], z_onehot[idx_t]).mean().item()
+        return float(-log_lik)
+
+    def _compute_waic(self, step_features, traj_indices, n_demos, k, n_seeds=3):
+        """Widely-Applicable Information Criterion (Watanabe 2010).
+
+        WAIC = -2 * (lppd - p_waic) where
+            lppd     = sum_i log( mean_s p_s(x_i | z_i) )
+            p_waic   = sum_i var_s( log p_s(x_i | z_i) )
+
+        We approximate posterior draws by refitting CFDE under different
+        torch seeds — a pragmatic ensemble over initialisation noise, not
+        a full Bayesian posterior. This is the standard frequentist-WAIC
+        approximation (Vehtari et al. 2017 §3) applicable to singular
+        models. Lower WAIC = better.
+        """
+        features_norm = (step_features - step_features.mean(axis=0)) / \
+                        (step_features.std(axis=0) + 1e-8)
+        train_mask = np.ones(len(traj_indices), dtype=bool)
+        n_epochs = min(30, self.n_iterations)
+        per_sample_logps = []
+        for s in range(n_seeds):
+            torch.manual_seed(1000 + s)
+            cfde_k, x, z_onehot = self._fit_cfde_on_subset(
+                features_norm, traj_indices, k, n_demos, train_mask, n_epochs,
+            )
+            with torch.no_grad():
+                lp = cfde_k.log_prob(x, z_onehot).cpu().numpy()
+            per_sample_logps.append(lp)
+        lp = np.stack(per_sample_logps, axis=0)            # (S, N)
+        lppd = np.log(np.exp(lp - lp.max(axis=0, keepdims=True)).mean(axis=0) + 1e-300)
+        lppd = (lppd + lp.max(axis=0)).sum()               # log-sum-exp stabilised
+        p_waic = lp.var(axis=0).sum()
+        return float(-2.0 * (lppd - p_waic))
+
     def _compute_bic(self, step_features, traj_indices, n_demos, k):
         """Compute BIC for a given K using a fresh CFDE.
 
         BIC = -2 * log_likelihood + n_params * log(n_samples)
         Lower BIC = better model. Used for data-driven K selection.
+
+        NOTE (Batch E / Watanabe 2013): BIC assumes a regular statistical
+        model where the Fisher information is non-singular. Normalizing
+        flows are SINGULAR models — mixture components are not locally
+        identifiable — so BIC is theoretically unjustified here. The
+        default `k_selection` is therefore `heldout_nll`. BIC is kept for
+        backward compatibility and ablation only.
         """
         total_steps, feat_dim = step_features.shape
         features_norm = (step_features - step_features.mean(axis=0)) / (step_features.std(axis=0) + 1e-8)
@@ -1014,22 +1181,32 @@ class MMICRL:
         n_demos = len(collector.demonstrations)
         step_features, traj_indices = collector.get_step_data(n_actions=n_actions)
 
-        # Data-driven K selection via BIC (replaces hardcoded n_types)
+        # Data-driven K selection. Default score is heldout NLL (Watanabe
+        # 2013 — BIC is invalid for the singular flow likelihood). BIC and
+        # WAIC remain selectable via self.k_selection for ablation.
         if self.auto_select_k and n_demos >= 6:
             k_min, k_max = self.k_range
             k_max = min(k_max, n_demos // 2)
-            bic_scores = {}
-            print("  BIC model selection for K:")
+            scores = {}
+            score_name = self.k_selection
+            score_fn = {
+                "bic": self._compute_bic,
+                "heldout_nll": self._compute_heldout_nll,
+                "waic": self._compute_waic,
+            }[score_name]
+            print(f"  {score_name.upper()} model selection for K:")
             for k in range(max(1, k_min), k_max + 1):
-                bic = self._compute_bic(step_features, traj_indices, n_demos, k)
-                bic_scores[k] = bic
-                print(f"    K={k}: BIC={bic:.1f}")
-            best_k = min(bic_scores, key=bic_scores.get)
+                s = score_fn(step_features, traj_indices, n_demos, k)
+                scores[k] = s
+                print(f"    K={k}: {score_name}={s:.4f}")
+            best_k = min(scores, key=scores.get)
             self.n_types = best_k
-            self._bic_scores = bic_scores
-            print(f"  Selected K={best_k} (lowest BIC={bic_scores[best_k]:.1f})")
+            self._bic_scores = scores  # kept for compat (result dict key)
+            self._k_selection_scores = {"score": score_name, "values": scores}
+            print(f"  Selected K={best_k} (lowest {score_name}={scores[best_k]:.4f})")
         else:
             self._bic_scores = {}
+            self._k_selection_scores = {}
 
         # Type discovery via per-step CFDE with trajectory-level assignment
         assignments = self._discover_types_cfde(step_features, traj_indices, n_demos)
@@ -1055,6 +1232,7 @@ class MMICRL:
             "lambda1": self.lambda1,
             "lambda2": self.lambda2,
             "bic_scores": self._bic_scores,
+            "k_selection": self._k_selection_scores,
         }
 
         return results

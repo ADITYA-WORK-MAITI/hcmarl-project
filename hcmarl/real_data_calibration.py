@@ -1092,6 +1092,125 @@ def run_full_path_g_pipeline(
     }
 
 
+def bootstrap_mi_diagnostic(
+    worker_profiles: List[Dict],
+    n_bootstrap: int = 30,
+    muscle: str = "shoulder",
+    target_loads: Optional[List[float]] = None,
+    n_episodes_per_worker: int = 3,
+    episode_duration_sec: float = 90.0,
+    n_iterations: int = 40,
+    k_range: Tuple[int, int] = (1, 5),
+    hidden_dims: Optional[List[int]] = None,
+    ci_level: float = 0.95,
+    seed: int = 0,
+) -> Dict:
+    """Batch E4: bootstrap CI on the Path G homogeneity claim.
+
+    Repeatedly resample the calibrated workers with replacement, refit
+    MMICRL, and record (K*, MI). The headline number for Experiment C is
+    reported as a bootstrap 95% CI on MI, not a single point estimate —
+    this keeps the "K=1 on WSD4FEDSRM" claim honest about sampling error
+    on N=34.
+
+    Args:
+        worker_profiles: From run_path_g()['worker_profiles'] OR any list
+            whose entries have 'worker_id' + 'muscles' with F/R/r.
+        n_bootstrap: number of resample draws (30 for pilot, 100+ for paper).
+        muscle / target_loads / *_per_worker / duration: passed through to
+            generate_demonstrations_from_profiles.
+        n_iterations: MMICRL optimisation steps per fit.
+        k_range: candidate K values for the auto-selection sweep.
+        hidden_dims: CFDE hidden sizes (None -> defaults).
+        ci_level: bootstrap CI width (0.95 -> 2.5 / 97.5 percentiles).
+        seed: controls the bootstrap resampler.
+
+    Returns:
+        dict with mi_mean, mi_ci_lo, mi_ci_hi, k_distribution (Counter
+        over drawn K*), k_mode, and the full raw (mi_samples, k_samples)
+        arrays for later analysis.
+    """
+    from collections import Counter
+
+    # Lazy import to avoid a circular dep: MMICRL lives in hcmarl.mmicrl
+    # which imports are already hot upstream of this function.
+    from hcmarl.mmicrl import DemonstrationCollector, MMICRL
+
+    if len(worker_profiles) < 2:
+        raise ValueError("Need at least 2 worker profiles to bootstrap.")
+    if n_bootstrap < 1:
+        raise ValueError("n_bootstrap must be >= 1.")
+
+    rng = np.random.default_rng(seed)
+    mi_samples = []
+    k_samples = []
+
+    for b in range(n_bootstrap):
+        # Resample workers with replacement
+        idx = rng.integers(0, len(worker_profiles), size=len(worker_profiles))
+        draw = [worker_profiles[i] for i in idx]
+
+        # Regenerate demos for this draw
+        demos, worker_ids = generate_demonstrations_from_profiles(
+            draw, muscle=muscle, target_loads=target_loads,
+            n_episodes_per_worker=n_episodes_per_worker,
+            episode_duration_sec=episode_duration_sec,
+        )
+        if len(demos) < 4:
+            continue
+
+        # Path G trajectories have columns [t, MR, MA, MF, C, TL, Reff].
+        # Convert to DemonstrationCollector's (obs, action) form: state
+        # = [MR, MA, MF, TL], action = 0 if C < 0.05 else 1 (rest/work).
+        collector = DemonstrationCollector(n_muscles=1)
+        for traj_arr in demos:
+            traj = []
+            for row in traj_arr:
+                _, MR, MA, MF, C, TL, _ = row
+                obs = np.array([MR, MA, MF, TL], dtype=np.float32)
+                action = 0 if C < 0.05 else 1
+                traj.append((obs, int(action)))
+            collector.demonstrations.append(traj)
+            collector.worker_ids.append(int(worker_ids[len(collector.demonstrations) - 1]))
+
+        # Use heldout_nll so the bootstrap estimate is consistent with
+        # the singular-flow theory (Watanabe 2013). K_range capped by
+        # n_demos // 2 inside MMICRL.fit.
+        mm = MMICRL(
+            n_types=k_range[0], n_muscles=1, n_iterations=n_iterations,
+            hidden_dims=hidden_dims or [32, 32],
+            auto_select_k=True, k_range=k_range,
+            k_selection="heldout_nll",
+        )
+        res = mm.fit(collector, n_actions=2)
+        mi_samples.append(float(res["mutual_information"]))
+        k_samples.append(int(res["n_types_discovered"]))
+
+    if not mi_samples:
+        raise RuntimeError(
+            "Bootstrap produced zero valid draws — check n_episodes_per_worker."
+        )
+
+    mi_arr = np.asarray(mi_samples, dtype=np.float64)
+    alpha = 1.0 - ci_level
+    lo = float(np.percentile(mi_arr, 100 * (alpha / 2)))
+    hi = float(np.percentile(mi_arr, 100 * (1 - alpha / 2)))
+    k_distribution = Counter(k_samples)
+    k_mode = int(k_distribution.most_common(1)[0][0])
+
+    return {
+        "mi_mean": float(mi_arr.mean()),
+        "mi_ci_lo": lo,
+        "mi_ci_hi": hi,
+        "k_distribution": dict(k_distribution),
+        "k_mode": k_mode,
+        "mi_samples": mi_samples,
+        "k_samples": k_samples,
+        "ci_level": ci_level,
+        "n_bootstrap": len(mi_samples),
+    }
+
+
 if __name__ == "__main__":
     import sys
 

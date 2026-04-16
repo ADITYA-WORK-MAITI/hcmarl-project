@@ -218,6 +218,11 @@ def run_mmicrl_pretrain(cfg, log_dir="logs"):
     # Fit MMICRL (single-muscle shoulder calibration -> n_muscles=1)
     auto_select_k = mmicrl_cfg.get("auto_select_k", True)
     k_range = tuple(mmicrl_cfg.get("k_range", [1, 5]))
+    # E2 (Batch E): default to held-out NLL because BIC is invalid for
+    # normalizing flows (Watanabe 2013 singular-model theorem). Users who
+    # want to reproduce a pre-Batch-E run can set k_selection: bic.
+    k_selection = str(mmicrl_cfg.get("k_selection", "heldout_nll"))
+    heldout_frac = float(mmicrl_cfg.get("heldout_frac", 0.2))
     mmicrl = MMICRL(
         n_types=n_types,
         lambda1=mmicrl_cfg.get("lambda1", 1.0),
@@ -227,6 +232,8 @@ def run_mmicrl_pretrain(cfg, log_dir="logs"):
         hidden_dims=mmicrl_cfg.get("hidden_dims", [64, 64]),
         auto_select_k=auto_select_k,
         k_range=k_range,
+        k_selection=k_selection,
+        heldout_frac=heldout_frac,
     )
     # S8: pass action-space size explicitly (derived from config tasks)
     # so MMICRL does not rely on max(action)+1 auto-detection.

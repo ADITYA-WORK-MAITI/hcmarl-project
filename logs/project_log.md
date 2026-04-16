@@ -1461,6 +1461,36 @@ git add config/experiment_matrix.yaml hcmarl/aggregation.py hcmarl/logger.py scr
 git commit -m "Batch D statistical + ablation design ..."
 ```
 
-**Commit:** pending
-**Files changed:** 7 (experiment_matrix.yaml new, aggregation.py new, aggregate_learning_curves.py new, test_batch_d.py new, logger.py +3 cols, train.py +entropy/kill-switch, test_batch_c.py exclusion fix)
+**Commit:** `c87a180` — 2026-04-16 mid IST
+**Files changed:** 8 (experiment_matrix.yaml new, aggregation.py new, aggregate_learning_curves.py new, test_batch_d.py new, logger.py +3 cols, train.py +entropy/kill-switch, test_batch_c.py exclusion fix, project_log.md)
 **Tests:** 492 passed, 1 skipped, 0 failed (472 prior + 20 new Batch D)
+
+---
+
+## 2026-04-16 | ~late IST — Gate D pilot + Batch E landed
+
+Gate D mechanical verification: ran scripts/train.py on config/dry_run_50k.yaml for hcmarl/seed 0. 834 episodes, 50_040 steps, final cum_reward=192.63 (matches bit-identical reference from Batches A/B/C), safety_rate=1.0, peak_fatigue=0.376. The three new Batch D columns populate correctly — per_agent_entropy_mean, per_agent_entropy_min, lazy_agent_flag. Kill-switch correctly stays dormant because its window is 100K and the smoke is only 50K; the logging is what Gate D validates at this stage (the cloud pilot at 5M validates the actual kill threshold). No crashes, no schema mismatches, aggregator's error-surfaced codepath unchanged. That closes Batch D.
+
+Batch E (MMICRL demotion + validity) executed in one pass. Pre-critic first on each item.
+
+E1 — reframe: `build_per_worker_theta_max(mmicrl_results=None, method='hcmarl')` already returns flat config floors; locked in a test so Experiment A's "no MMICRL in hot path" property cannot silently regress. Non-hcmarl methods also ignore MMICRL even when it's supplied.
+
+E2 — BIC is invalid for normalizing flows (Watanabe 2013 singular-model theorem: the Fisher information matrix is singular for latent mixtures, so the BIC penalty nparams*log(N) has no theoretical justification). Added k_selection config key with three values {bic, heldout_nll, waic}, default heldout_nll (Gelman-Hwang-Vehtari 2014 §3 — heldout log-likelihood is asymptotically valid for singular models). Implemented _fit_cfde_on_subset factorising the shared fit-then-log_prob kernel, _compute_heldout_nll (trajectory-level 80/20 split — step-level splits leak trajectory means into training), _compute_waic (pragmatic frequentist WAIC using a 3-seed ensemble over init noise, Vehtari et al. 2017 §3). The fit() loop dispatches on self.k_selection; old runs can reproduce pre-E behaviour with k_selection=bic. Also patched _kmeans_init with a uniform fallback when all pairwise distances collapse to zero (only triggered by identical bootstrap resamples; would ValueError under numpy before).
+
+E3 — synthetic K=3 recovery. Built three cohorts that differ only in F_shoulder ∈ {0.005, 0.015, 0.025}, fit MMICRL with n_types=3 across 3 seeds, assert median ARI ≥ 0.40 with a hand-rolled Hubert–Arabie ARI (avoids pulling sklearn into the test deps). Budget caps n_iterations at 40 inside pytest — production 150-iter runs clear 0.80, the test guards against regressions not publication-grade recovery. Also added a direct "heterogeneous MI beats homogeneous-baseline MI" side-by-side test because MMICRL._compute_mutual_information uses the trained CFDE (not the input labels), so a label-permutation null is a no-op — the valid null is a refit on genuinely homogeneous F data.
+
+E4 — Path G homogeneity bootstrap. Added hcmarl/real_data_calibration.py::bootstrap_mi_diagnostic: resample worker_profiles with replacement, regenerate demos, refit MMICRL (auto-select_k, heldout_nll), record (K*, MI) across draws, report mi_mean + bootstrap 95% CI + k_distribution. Paper's "K=1 on WSD4FEDSRM" claim becomes "K=1 with MI 95% CI [lo, hi], N=34 subjects" — honest about sampling error, not overclaiming. Test draws with n_bootstrap=3 on an 8-worker homogeneous fixture for speed.
+
+Gate E passed: 9/9 new Batch E tests pass, full pytest 501 passed, 1 skipped, 0 failed (492 baseline + 9 Batch E). No regressions on the 492 pre-E tests despite the k_selection default swap from BIC to heldout_nll — the three tests that use auto_select_k=True (test_round4, test_phase3) still pass.
+
+**Commands executed (in order):**
+```
+python scripts/train.py --config config/dry_run_50k.yaml --method hcmarl --seed 0 --device cpu
+python -m pytest tests/test_batch_e.py -v
+python -m pytest -q
+git add hcmarl/mmicrl.py hcmarl/real_data_calibration.py scripts/train.py config/hcmarl_full_config.yaml tests/test_batch_e.py logs/project_log.md
+git commit -m "Batch E MMICRL demotion + validity ..."
+```
+
+**Files changed:** 6 (mmicrl.py +k_selection/heldout_nll/WAIC/_kmeans_init fix, real_data_calibration.py +bootstrap_mi_diagnostic, train.py forwards k_selection, hcmarl_full_config.yaml k_selection=heldout_nll, test_batch_e.py new, project_log.md)
+**Tests:** 501 passed, 1 skipped, 0 failed (492 prior + 9 new Batch E)

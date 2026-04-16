@@ -89,9 +89,16 @@ logging:
 #   falls back to the floor for every type (warning logged at train time).
 mmicrl:
   enabled: true
-  n_types: 3              # initial guess; overridden by BIC if auto_select_k=true
-  auto_select_k: true     # data-driven K selection via BIC over k_range
+  n_types: 3              # initial guess; overridden by auto-selection below
+  auto_select_k: true     # data-driven K selection across k_range
   k_range: [1, 5]
+  # E2 (Batch E): Watanabe 2013 shows BIC is invalid for normalizing flows
+  # (singular Fisher information). Default to held-out NLL — asymptotically
+  # valid for singular models (Gelman-Hwang-Vehtari 2014). Alternatives:
+  #   bic        — Bayesian information criterion (legacy; reproduces pre-E runs)
+  #   waic       — Widely-Applicable Information Criterion (Watanabe 2010)
+  k_selection: heldout_nll
+  heldout_frac: 0.2
   n_iterations: 150
   n_episodes_per_worker: 3
   lambda1: 1.0
