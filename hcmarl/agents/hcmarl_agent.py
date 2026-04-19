@@ -177,7 +177,11 @@ class HCMARLAgent:
         torch.save(state, path)
 
     def load(self, path):
-        ckpt = torch.load(path, map_location=self.device)
+        # weights_only=False: PyTorch 2.6+ defaults to True, which rejects
+        # the optimizer state-dicts (and continuous-actor optim) we save
+        # here. Without this, --resume silently fails to restore optimizer
+        # state and Batch B's bit-identical resume guarantee evaporates.
+        ckpt = torch.load(path, map_location=self.device, weights_only=False)
         self.mappo.actor.load_state_dict(ckpt["mappo_actor"])
         self.mappo.critic.load_state_dict(ckpt["mappo_critic"])
         if "mappo_actor_optim" in ckpt:

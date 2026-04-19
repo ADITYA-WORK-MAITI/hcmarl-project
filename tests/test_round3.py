@@ -1,10 +1,13 @@
 """
-Tests for Round 3 audit fixes (C-3, C-17, C-18).
+Tests for Round 3 audit fixes (C-3, C-17).
 
 Verifies:
     C-3   -- Hungarian allocator replaces greedy; exact for all N
     C-17  -- Ablation knobs actually change behavior
-    C-18  -- Scaling configs are clean (no dead keys, unified allocator)
+
+Note: the C-18 scaling-configs class was removed when the scaling study was
+dropped (per the 2026-04-16 venue audit). The lone retained allocator-N
+sweep (Hungarian works for any N) lives in tests/test_post_scaling_drop.py.
 """
 import numpy as np
 import pytest
@@ -236,62 +239,73 @@ class TestC17:
         assert cfg["mmicrl"]["use_fixed_theta"] is True
         assert cfg["mmicrl"]["enabled"] is False
 
-    def test_run_ablations_has_flags(self):
-        """Verify run_ablations.py defines per-ablation CLI flags."""
-        sys.path.insert(0, "scripts")
-        import importlib
-        spec = importlib.util.spec_from_file_location("run_ablations", "scripts/run_ablations.py")
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        assert hasattr(mod, 'ABLATION_FLAGS')
-        assert "no_ecbf" in mod.ABLATION_FLAGS
-        assert "--ecbf-mode" in mod.ABLATION_FLAGS["no_ecbf"]
-        assert "--no-nswf" in mod.ABLATION_FLAGS["no_nswf"]
-        assert "--disagreement-type" in mod.ABLATION_FLAGS["no_divergent"]
+    def test_run_ablations_reads_matrix(self):
+        """run_ablations.py must read experiment_matrix.yaml's ablation rungs
+        rather than hardcoding a list. This is the post-Batch-D contract:
+        the matrix file is the single source of truth for what runs."""
+        with open("scripts/run_ablations.py") as f:
+            content = f.read()
+        assert "experiment_matrix.yaml" in content, (
+            "run_ablations.py must reference experiment_matrix.yaml"
+        )
+        assert 'ablation' in content and 'rungs' in content, (
+            "run_ablations.py must read the ablation.rungs list from the matrix"
+        )
+        # Old remove-one ABLATION_FLAGS dict is gone — matrix-driven launcher
+        # uses --run-name to keep ablation logs distinct from the headline.
+        assert "ABLATION_FLAGS" not in content, (
+            "ABLATION_FLAGS dict was the old remove-one design; the new "
+            "build-up ladder reads the matrix directly"
+        )
+        assert "--run-name" in content, (
+            "run_ablations.py must pass --run-name so logs/ablation_<rung>/ "
+            "doesn't collide with logs/<method>/ from the headline grid"
+        )
+
+    def test_run_baselines_reads_matrix(self):
+        """run_baselines.py must launch from experiment_matrix.yaml (4 methods
+        x 10 seeds) rather than the pre-Batch-D hardcoded 3-baseline x 5-seed
+        list. Hardcoding the seed count was the seed-count execution bug."""
+        with open("scripts/run_baselines.py") as f:
+            content = f.read()
+        assert "experiment_matrix.yaml" in content
+        assert 'headline' in content and 'methods' in content
+        # The pre-Batch-D file had: SEEDS = [0, 1, 2, 3, 4]. New launcher
+        # reads `headline.seeds` from the matrix instead.
+        assert "SEEDS = [0, 1, 2, 3, 4]" not in content, (
+            "Hardcoded 5-seed list snuck back in; aggregator expects 10 seeds"
+        )
+        assert "BASELINES = [" not in content, (
+            "Hardcoded BASELINES list snuck back in; matrix is canonical"
+        )
+
+    def test_run_baselines_no_fake_methods_post_refactor(self):
+        """Even after the matrix-driven rewrite, the launcher must not allow
+        fake methods to creep in. Mirrors test_round4.test_run_baselines_no_fake_methods."""
+        with open("scripts/run_baselines.py") as f:
+            content = f.read()
+        assert '"ppo_lag"' not in content
+        assert '"cpo"' not in content
 
 
 # =====================================================================
-# C-18: Scaling configs clean (no dead keys, unified allocator)
+# Allocator scaling sanity (kept after the C-18 scaling-config class
+# was deleted along with the scaling study). The Hungarian allocator
+# is expected to work at every N the warehouse env can be configured
+# with, regardless of whether we ship a scaling experiment.
 # =====================================================================
 
-class TestC18:
-
-    def test_no_dead_scaling_key(self):
-        """Scaling configs should NOT have dead scaling.n_tasks key."""
-        for n in [3, 4, 6, 8, 12]:
-            path = f"config/scaling_n{n}.yaml"
-            with open(path) as f:
-                cfg = yaml.safe_load(f)
-            assert "scaling" not in cfg, f"{path} still has dead 'scaling' key"
-
-    def test_scaling_configs_identical_except_n(self):
-        """All scaling configs should be identical except for n_workers."""
-        configs = {}
-        for n in [3, 4, 6, 8, 12]:
-            with open(f"config/scaling_n{n}.yaml") as f:
-                cfg = yaml.safe_load(f)
-            configs[n] = cfg
-
-        base = configs[3]
-        for n in [4, 6, 8, 12]:
-            other = configs[n]
-            # n_workers differs
-            assert other["environment"]["n_workers"] == n
-            # Everything else should match
-            for section in ["training", "algorithm", "ecbf"]:
-                assert other.get(section) == base.get(section), \
-                    f"scaling_n{n}.yaml section '{section}' differs from scaling_n3.yaml"
+class TestAllocatorScalesWithN:
 
     def test_allocator_same_algorithm_all_n(self):
-        """After C-3 fix, allocator uses Hungarian for all N."""
+        """Hungarian allocator returns a feasible assignment for any N."""
         from hcmarl.nswf_allocator import NSWFAllocator, NSWFParams
         alloc = NSWFAllocator(NSWFParams())
         rng = np.random.RandomState(42)
-        # Run for all scaling N values with M=5 (env always has 5 productive tasks)
         for N in [3, 4, 6, 8, 12]:
             util = rng.uniform(1, 5, (N, 5))
             fl = rng.uniform(0, 0.3, N)
             result = alloc.allocate(util, fl)
             assert len(result.assignments) == N
-            # All should have valid objective (no -inf from greedy suboptimality)
+            # Hungarian is exact — should never fall through to a -inf objective.
             assert result.objective_value > -1e10

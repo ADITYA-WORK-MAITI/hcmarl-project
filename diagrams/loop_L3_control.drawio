@@ -1,0 +1,80 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="L3" name="L3 Control Pipeline">
+    <mxGraphModel dx="1400" dy="550" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="550" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="t" value="L3: Control Pipeline — NSWF Allocation + ECBF Safety  (per env step, inside L2)" style="text;html=1;fontSize=13;fontStyle=1;align=center;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="100" y="12" width="1200" height="25" as="geometry"/>
+        </mxCell>
+
+        <!-- Col 1: Fatigue Read -->
+        <mxCell id="c1" value="&lt;b&gt;1. Fatigue Read&lt;/b&gt;&lt;br&gt;&lt;br&gt;Read MF_i per worker&lt;br&gt;from env state&lt;br&gt;max(MF) per worker&lt;br&gt;for allocator input" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="30" y="60" width="170" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- Col 2: NSWF -->
+        <mxCell id="c2" value="&lt;b&gt;2. NSWF Solve  [Eq.33]&lt;/b&gt;&lt;br&gt;&lt;br&gt;max Σ_i ln(S_i)&lt;br&gt;S_i = U(i,j*(i)) − D_i(MF_i)&lt;br&gt;D_i = κ·MF²/(1−MF) [Eq.32]&lt;br&gt;U(i,0) = D_i + ε [Eq.31]&lt;br&gt;1 task per worker&lt;br&gt;Multiple workers can rest" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="250" y="60" width="210" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- Col 3: Load Map -->
+        <mxCell id="c3" value="&lt;b&gt;3. Load Map  [Eq.34]&lt;/b&gt;&lt;br&gt;&lt;br&gt;j*(i) → T_L^(j)_g&lt;br&gt;per-muscle MVC fraction&lt;br&gt;6 muscles × demand" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="510" y="60" width="160" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- Col 4: Nominal Drive -->
+        <mxCell id="c4" value="&lt;b&gt;4. Nominal Drive  [Eq.35]&lt;/b&gt;&lt;br&gt;&lt;br&gt;C_nom = π_θ(o_i)&lt;br&gt;or baseline:&lt;br&gt;k_p · (T_L − MA)_+&lt;br&gt;k_p = 1.0" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="720" y="60" width="160" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- Col 5: ECBF QP -->
+        <mxCell id="c5" value="&lt;b&gt;5. ECBF-QP  [Eq.20]&lt;/b&gt;&lt;br&gt;&lt;br&gt;Per muscle g, per worker i:&lt;br&gt;min ‖C − C_nom‖²  s.t.&lt;br&gt;Fatigue ceiling [Eq.18]: rel-deg 2&lt;br&gt;Resting floor [Eq.23]: rel-deg 1&lt;br&gt;C ≥ 0" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="930" y="60" width="210" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- Col 6: Output -->
+        <mxCell id="c6" value="&lt;b&gt;6. Safe Output C*&lt;/b&gt;&lt;br&gt;&lt;br&gt;C* (safe drive)&lt;br&gt;per muscle per worker&lt;br&gt;&lt;br&gt;If QP infeasible:&lt;br&gt;C* = 0 (forced rest)&lt;br&gt;[Remark 5.13]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1190" y="60" width="170" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- Forward arrows -->
+        <mxCell id="a12" value="MF_i" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;fontSize=9;" edge="1" parent="1" source="c1" target="c2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a23" value="j*(i)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;fontSize=9;" edge="1" parent="1" source="c2" target="c3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a34" value="T_L" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;fontSize=9;" edge="1" parent="1" source="c3" target="c4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a45" value="C_nom" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;fontSize=9;" edge="1" parent="1" source="c4" target="c5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a56" value="C*" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;fontSize=9;" edge="1" parent="1" source="c5" target="c6">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- NSWF properties box -->
+        <mxCell id="nswf_note" value="&lt;b&gt;Nash Social Welfare&lt;/b&gt; (not Nash Bargaining) [Kaneko &amp; Nakamura 1979]&lt;br&gt;D_i diverges as MF → 1: mathematical guarantee against burnout&lt;br&gt;Rest option: ln(ε) ≪ 0, strongly disfavoured but always feasible" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F57F17;fontSize=9;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="30" y="220" width="460" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Design constraint box -->
+        <mxCell id="design_note" value="&lt;b&gt;Design constraint&lt;/b&gt; [Def. 5.4]:  θ_max ≥ F/(F + R·r)&lt;br&gt;Shoulder: 62.7%  |  Ankle: 2.1%  |  Knee: 36.4%  |  Elbow: 39.3%  |  Trunk: 11.0%  |  Grip: 19.5%&lt;br&gt;Safety across mode transitions: Nagumo invariance [Thm 5.7]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontSize=9;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="530" y="220" width="470" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Alpha note -->
+        <mxCell id="alpha_note" value="&lt;b&gt;Note:&lt;/b&gt; α₁=α₂=α₃=0.5 in config.  Env currently hardcodes (0.05, 0.05, 0.10) — flagged for fix." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF4E5;strokeColor=#C67C00;fontSize=9;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="220" width="320" height="35" as="geometry"/>
+        </mxCell>
+
+        <!-- Refs -->
+        <mxCell id="refs" value="Math doc refs:  NSWF = §6, Eq.31-33  |  ECBF = §5, Eq.12-30  |  dual barrier = §5.3  |  rest-phase safety = Thm 5.7  |  QP = Boyd 2004, CVXPY/OSQP" style="text;html=1;fontSize=9;fontColor=#888;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="30" y="310" width="1300" height="18" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -354,14 +354,10 @@ class TestS27:
                 missing.append(name)
         assert not missing, f"Configs missing explicit kp: {missing}"
 
-    def test_scaling_configs_have_kp_in_ecbf(self):
-        """All scaling_n*.yaml must have kp under ecbf section."""
-        for n in [3, 4, 6, 8, 12]:
-            path = os.path.join(self.CONFIG_DIR, f"scaling_n{n}.yaml")
-            with open(path) as f:
-                cfg = yaml.safe_load(f)
-            assert cfg["ecbf"]["kp"] == 1.0, \
-                f"scaling_n{n}.yaml ecbf.kp != 1.0"
+    # test_scaling_configs_have_kp_in_ecbf was removed when the scaling
+    # study was dropped (2026-04-16 venue audit). The general
+    # test_all_configs_have_kp above iterates every YAML containing an
+    # `ecbf:` section, so any future config under config/ is still covered.
 
 
 # =====================================================================

@@ -1,0 +1,114 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="L4" name="L4 MAPPO-Lagrangian">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="600" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- ==================== COLUMN 1: INPUT MODULE ==================== -->
+        <mxCell id="h1" value="INPUT MODULE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D9D9D9;strokeColor=#333;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="200" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="r1a" value="&lt;b&gt;Rollout Buffer (from L2)&lt;/b&gt;&lt;br&gt;• (o_i, s, a, log π, R_t, C_t, done)&lt;br&gt;• T × N samples (T=steps, N=workers)&lt;br&gt;• Per-agent indexed" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="20" y="50" width="200" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="r1b" value="&lt;b&gt;Global State (for critic)&lt;/b&gt;&lt;br&gt;• s ∈ ℝ^{18N+1} (N=6 → ℝ¹⁰⁹)&lt;br&gt;• Augmented with agent-id one-hot&lt;br&gt;  for per-agent critic values (C-9.A)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="20" y="125" width="200" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="r1c" value="&lt;b&gt;Hyperparameters&lt;/b&gt;&lt;br&gt;• γ = 0.99 (discount)&lt;br&gt;• λ_GAE = 0.95&lt;br&gt;• ε = 0.2 (clip)&lt;br&gt;• β = 0.01 (entropy coeff)&lt;br&gt;• lr = 3e-4, grad-clip = 0.5&lt;br&gt;• n_epochs = 10, batch = 256" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="20" y="200" width="200" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== COLUMN 2: GAE MODULE ==================== -->
+        <mxCell id="h2" value="GAE COMPUTATION" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D9D9D9;strokeColor=#333;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="270" y="20" width="200" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="r2a" value="&lt;b&gt;Reward Advantages&lt;/b&gt;&lt;br&gt;• δ_t = R_t + γ·V(s_{t+1}) − V(s_t)&lt;br&gt;• Â_t = Σ_k (γ·λ_GAE)^k · δ_{t+k}&lt;br&gt;• Normalise: Â ← (Â−μ)/(σ+1e-8)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="270" y="50" width="200" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="r2b" value="&lt;b&gt;Cost Advantages&lt;/b&gt;&lt;br&gt;• Same GAE formula using V_c&lt;br&gt;• NOT normalised (C-10.A fix)&lt;br&gt;  [Stooke+ 2020, §5]&lt;br&gt;• Normalising breaks Lagrangian" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="270" y="125" width="200" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="r2c" value="&lt;b&gt;Returns&lt;/b&gt;&lt;br&gt;• Reward returns (for critic target)&lt;br&gt;• Cost returns (for cost-critic target)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="270" y="210" width="200" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== COLUMN 3: PPO UPDATE MODULE ==================== -->
+        <mxCell id="h3" value="PPO UPDATE MODULE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D9D9D9;strokeColor=#333;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="520" y="20" width="220" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="r3a" value="&lt;b&gt;Actor Loss (per epoch)&lt;/b&gt;&lt;br&gt;• ratio r = π_θ(a|o) / π_θ_old(a|o)&lt;br&gt;• Reward: −min(r·Â, clip(r,1±ε)·Â)&lt;br&gt;• Cost: +λ · max(r·Â_c, clip(r)·Â_c)&lt;br&gt;  (max errs toward safety)&lt;br&gt;• Entropy: − β · H(π)&lt;br&gt;• L_actor = reward + cost + entropy" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="520" y="50" width="220" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="r3b" value="&lt;b&gt;Value Critic Update&lt;/b&gt;&lt;br&gt;• V_φ(s): 2×128 Tanh → scalar&lt;br&gt;• L_critic = MSE(V(s), returns)&lt;br&gt;• Per-agent via augmented gs (C-9.A)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="520" y="170" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="r3c" value="&lt;b&gt;Cost Critic Update&lt;/b&gt;&lt;br&gt;• V_c(s): 2×128 Tanh → scalar&lt;br&gt;• L_ccrit = MSE(V_c(s), cost_returns)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="520" y="240" width="220" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="r3d" value="&lt;b&gt;Repeat: 10 epochs (n_epochs)&lt;/b&gt;&lt;br&gt;• Each epoch: full pass over buffer&lt;br&gt;• Gradient clip at 0.5" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="520" y="295" width="220" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== COLUMN 4: LAGRANGIAN MODULE ==================== -->
+        <mxCell id="h4" value="LAGRANGIAN MODULE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D9D9D9;strokeColor=#333;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="790" y="20" width="200" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="r4a" value="&lt;b&gt;Dual Variable λ&lt;/b&gt;&lt;br&gt;• log λ ∈ nn.Parameter&lt;br&gt;• λ = exp(log λ) ≥ 0 (always)&lt;br&gt;• Initialized near 0" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="790" y="50" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="r4b" value="&lt;b&gt;EMA Cost Tracking&lt;/b&gt;&lt;br&gt;• cost_ema = (1−α)·cost_ema + α·c̄&lt;br&gt;• α_ema = 0.05 (slow update)&lt;br&gt;• c̄ = episode cost / steps" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="790" y="120" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="r4c" value="&lt;b&gt;Dual Ascent Update&lt;/b&gt;&lt;br&gt;• Δ log λ ∝ −λ·(cost_ema − budget)&lt;br&gt;• budget = 0.10&lt;br&gt;• ↑ λ if violations exceed budget&lt;br&gt;• ↓ λ if within budget" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="790" y="190" width="200" height="85" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== COLUMN 5: OUTPUT MODULE ==================== -->
+        <mxCell id="h5" value="OUTPUT MODULE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D9D9D9;strokeColor=#333;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="20" width="200" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="r5a" value="&lt;b&gt;Updated Actor Weights θ&lt;/b&gt;&lt;br&gt;• Decentralised policy π_θ(C | o_i)&lt;br&gt;→ Used in next episode's L2" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="50" width="200" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="r5b" value="&lt;b&gt;Updated Critic Weights φ&lt;/b&gt;&lt;br&gt;• V_φ(s) for GAE computation&lt;br&gt;→ Used in next episode's L4" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="105" width="200" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="r5c" value="&lt;b&gt;Updated Cost Critic φ_c&lt;/b&gt;&lt;br&gt;• V_c(s) for cost GAE&lt;br&gt;→ Shapes Lagrangian penalty" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="160" width="200" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="r5d" value="&lt;b&gt;Updated λ&lt;/b&gt;&lt;br&gt;• Controls safety-reward tradeoff&lt;br&gt;• Higher λ → more conservative policy" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="215" width="200" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="r5e" value="&lt;b&gt;Training Diagnostics&lt;/b&gt;&lt;br&gt;• actor_loss, critic_loss&lt;br&gt;• cost_critic_loss, entropy&lt;br&gt;• current λ value" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="270" width="200" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== ARROWS ==================== -->
+        <mxCell id="a12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r1a" target="r2a">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a23" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.3;" edge="1" parent="1" source="r2a" target="r3a">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a23b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r2c" target="r3b">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a34" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r3a" target="r4a">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a45" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.3;" edge="1" parent="1" source="r3a" target="r5a">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a45b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r4c" target="r5d">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== CAPTION ==================== -->
+        <mxCell id="cap" value="&lt;b&gt;Figure L4:&lt;/b&gt; Schematic framework of the MAPPO-Lagrangian policy update (Loop 4, runs at end of each episode in Loop 1). The rollout buffer feeds GAE computation (reward advantages normalised, cost advantages NOT normalised per C-10.A / Stooke+ 2020). The PPO update runs 10 epochs with clipped surrogate loss + Lagrangian cost penalty (max-surr errs toward safety under ratio truncation). The Lagrangian module performs EMA-smoothed dual ascent on log λ against a cost budget of 0.10. Updated weights return to Loop 2 for the next episode." style="text;html=1;fontSize=9;align=left;verticalAlign=top;spacingLeft=5;spacingTop=3;fontColor=#333;" vertex="1" parent="1">
+          <mxGeometry x="20" y="380" width="1220" height="45" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

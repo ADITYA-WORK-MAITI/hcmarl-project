@@ -1,0 +1,111 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="L3" name="L3 Control Pipeline">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="680" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- ==================== COLUMN 1: FATIGUE INPUT MODULE ==================== -->
+        <mxCell id="h1" value="FATIGUE INPUT MODULE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D9D9D9;strokeColor=#333;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="200" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="r1a" value="&lt;b&gt;Current Physiological State&lt;/b&gt;&lt;br&gt;• MR_i, MA_i, MF_i per muscle&lt;br&gt;• Per worker i ∈ {1,...,N}&lt;br&gt;• From ODE integration (prev step)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="20" y="50" width="200" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="r1b" value="&lt;b&gt;Fatigue Summary&lt;/b&gt;&lt;br&gt;• max(MF) per worker&lt;br&gt;  (across 6 muscles)&lt;br&gt;• Drives allocator decisions" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="20" y="125" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="r1c" value="&lt;b&gt;Safety Thresholds (from L0)&lt;/b&gt;&lt;br&gt;• θ_max(z) per type per muscle&lt;br&gt;• Design constraint [Def. 5.4]:&lt;br&gt;  θ_max ≥ F/(F+Rr) [Eq.25]&lt;br&gt;• Shoulder: 62.7% | Ankle: 2.1%&lt;br&gt;• Knee: 36.4% | Elbow: 39.3%&lt;br&gt;• Trunk: 11.0% | Grip: 19.5%" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="20" y="195" width="200" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== COLUMN 2: NSWF MODULE ==================== -->
+        <mxCell id="h2" value="NSWF ALLOCATION MODULE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D9D9D9;strokeColor=#333;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="270" y="20" width="200" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="r2a" value="&lt;b&gt;Compute Disagreement [Eq.32]&lt;/b&gt;&lt;br&gt;• D_i(MF) = κ · MF² / (1−MF)&lt;br&gt;• κ = 1.0&lt;br&gt;• D_i(0)=0, D_i→∞ as MF→1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="270" y="50" width="200" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="r2b" value="&lt;b&gt;Compute Surplus Matrix&lt;/b&gt;&lt;br&gt;• S_ij = U(i,j) − D_i(MF_i)&lt;br&gt;• Rest: S_i0 = ε (always &gt; 0) [Eq.31]&lt;br&gt;• Productive tasks may have S &lt; 0&lt;br&gt;  if worker too fatigued" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="270" y="125" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="r2c" value="&lt;b&gt;Solve NSWF [Eq.33]&lt;/b&gt;&lt;br&gt;• max Σ_i ln(S_i)&lt;br&gt;• Hungarian / exact solver&lt;br&gt;• 1 task per worker constraint&lt;br&gt;• 1 worker per productive task" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="270" y="215" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="r2d" value="&lt;b&gt;Output: j*(i)&lt;/b&gt;&lt;br&gt;• Optimal assignment per worker" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="270" y="305" width="200" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== COLUMN 3: ACTOR MODULE ==================== -->
+        <mxCell id="h3" value="ACTOR MODULE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D9D9D9;strokeColor=#333;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="520" y="20" width="200" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="r3a" value="&lt;b&gt;Load Translation [§7.1, Eq.34]&lt;/b&gt;&lt;br&gt;• j*(i) → T_L^(j) ∈ [0,1]⁶&lt;br&gt;• 6 tasks × 6 muscles lookup table" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="520" y="50" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="r3b" value="&lt;b&gt;Neural Drive Controller [§7.2]&lt;/b&gt;&lt;br&gt;• Baseline [Eq.35]:&lt;br&gt;  C_nom = k_p · (T_L − MA)_+, k_p=1.0&lt;br&gt;• RL policy (training):&lt;br&gt;  C_nom = f_θ(o_i, task)&lt;br&gt;• 2×64 Tanh, input o_i ∈ ℝ¹⁹" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="520" y="110" width="200" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="r3c" value="&lt;b&gt;Output: C_nom&lt;/b&gt;&lt;br&gt;• Nominal (unsafe) neural drive&lt;br&gt;• Per muscle per worker" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="520" y="220" width="200" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== COLUMN 4: ECBF SAFETY MODULE ==================== -->
+        <mxCell id="h4" value="ECBF SAFETY MODULE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D9D9D9;strokeColor=#333;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="770" y="20" width="200" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="r4a" value="&lt;b&gt;Barrier Functions [§5.1, §5.3]&lt;/b&gt;&lt;br&gt;• h(x) = θ_max − MF ≥ 0 [Eq.12]&lt;br&gt;  (fatigue ceiling, rel-deg 2)&lt;br&gt;• h₂(x) = MR ≥ 0 [Eq.21]&lt;br&gt;  (resting floor, rel-deg 1)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="770" y="50" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="r4b" value="&lt;b&gt;ECBF Constraint [§5.2, Eq.18]&lt;/b&gt;&lt;br&gt;• −F·C + F²MA + R_eff·F·MA&lt;br&gt;  − R_eff²·MF + α₁·ḣ + α₂·ψ₁ ≥ 0&lt;br&gt;• ψ₁ = ḣ + α₁·h [Eq.16]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="770" y="140" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="r4c" value="&lt;b&gt;CBF-QP Solver [Eq.20]&lt;/b&gt;&lt;br&gt;• min ‖C − C_nom‖²&lt;br&gt;  s.t. Eq.18, Eq.23, C ≥ 0&lt;br&gt;• CVXPY / OSQP [27,28]&lt;br&gt;• α₁=α₂=α₃=0.5 (config)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="770" y="220" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="r4d" value="&lt;b&gt;Output: C* (safe drive)&lt;/b&gt;&lt;br&gt;• If feasible: closest safe C to C_nom&lt;br&gt;• If infeasible: C*=0 (forced rest)&lt;br&gt;  [Remark 5.13]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="770" y="310" width="200" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== COLUMN 5: SAFETY VERIFICATION ==================== -->
+        <mxCell id="h5" value="SAFETY VERIFICATION" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D9D9D9;strokeColor=#333;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="20" width="200" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="r5a" value="&lt;b&gt;Rest-Phase Safety [Thm 5.7]&lt;/b&gt;&lt;br&gt;• Nagumo invariance on {MF ≤ θ_max}&lt;br&gt;• Holds if θ_max ≥ F/(F+Rr) [Eq.25]&lt;br&gt;• Tight bound [Remark 5.8]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="50" width="200" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="r5b" value="&lt;b&gt;ψ₁ Jump at Transition [Prop 5.9]&lt;/b&gt;&lt;br&gt;• Work→rest: ψ₁ jumps by R(r−1)MF&lt;br&gt;• Always positive → ECBF strengthened" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="125" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="r5c" value="&lt;b&gt;Min Rest Duration [Eq.29-30]&lt;/b&gt;&lt;br&gt;• Δt* = F⁻¹·ln(F·MA(t_s)/β(t_r))_+&lt;br&gt;• Conservative bound [Eq.30]&lt;br&gt;• Shoulder ≈ 29 min (extreme: 3 hr)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="185" width="200" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="r5d" value="&lt;b&gt;Three Independent Safety Layers&lt;/b&gt;&lt;br&gt;• 1. ECBF barrier (real-time QP)&lt;br&gt;• 2. NSWF disagreement (macro alloc)&lt;br&gt;• 3. QP infeasibility → forced rest" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333;fontSize=9;align=left;spacingLeft=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="260" width="200" height="75" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== ARROWS ==================== -->
+        <mxCell id="a12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r1b" target="r2a">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a23" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r2d" target="r3a">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a34" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r3c" target="r4c">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a45" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r4a" target="r5a">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a1c_4c" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.3;" edge="1" parent="1" source="r1c" target="r4a">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== CAPTION ==================== -->
+        <mxCell id="cap" value="&lt;b&gt;Figure L3:&lt;/b&gt; Schematic framework of the control pipeline (Loop 3, runs per env step inside Loop 2). The NSWF allocator (§6) assigns tasks based on fatigue-driven disagreement utilities. The actor (§7.2) proposes nominal neural drive. The dual-barrier ECBF-QP (§5) projects it onto the safe set defined by fatigue ceiling h = θ_max − MF ≥ 0 (relative degree 2, [12,13]) and resting floor h₂ = MR ≥ 0 (relative degree 1, [14]). Safety across work/rest transitions is guaranteed by Nagumo invariance (Thm 5.7, [22,23]) provided θ_max ≥ F/(F+Rr)." style="text;html=1;fontSize=9;align=left;verticalAlign=top;spacingLeft=5;spacingTop=3;fontColor=#333;" vertex="1" parent="1">
+          <mxGeometry x="20" y="410" width="1200" height="50" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -122,6 +122,17 @@ class WarehousePettingZoo:
                 )
                 self.ecbf_filters[i][m] = ECBFFilter(muscle=mp, ecbf_params=params)
 
+        # Pre-cache ECBF scalar parameters for inlined filter_analytical.
+        # Eliminates per-step method-call + dataclass overhead in _integrate.
+        # Layout: _ecbf_cache[worker_idx][muscle_idx] = (F, alpha1, alpha2, alpha3, theta_max)
+        self._ecbf_cache = []
+        for i in range(n_workers):
+            row = []
+            for m in self.muscle_names:
+                ef = self.ecbf_filters[i][m]
+                row.append((ef._F, ef._alpha1, ef._alpha2, ef._alpha3, ef._theta_max))
+            self._ecbf_cache.append(row)
+
         self.possible_agents = [f"worker_{i}" for i in range(n_workers)]
         self.agents = list(self.possible_agents)
 
@@ -183,6 +194,7 @@ class WarehousePettingZoo:
         ecbf_clip_total = 0.0
         barrier_violations = 0
         worker_theta = self.theta_max_per_worker[worker_idx]
+        ecbf_row = self._ecbf_cache[worker_idx]
         for mi, m in enumerate(self.muscle_names):
             p = self.muscle_params[m]
             F, R_base, r = p["F"], p["R"], p["r"]
@@ -192,11 +204,18 @@ class WarehousePettingZoo:
             C_nominal = kp * max(TL - MA, 0.0) if TL > 0 else 0.0
             R_eff = R_base if TL > 0 else R_base * r
             if self.ecbf_mode == "on":
-                # C-6.A: Use canonical ECBFFilter instead of inlined bounds
-                state = ThreeCCrState(MR=MR, MA=MA, MF=MF)
-                C, _infeasible = self.ecbf_filters[worker_idx][m].filter_analytical(
-                    state, C_nominal, TL
-                )
+                # Inlined filter_analytical: eliminates 3 method calls +
+                # ThreeCCrState dataclass construction per muscle per step.
+                eF, a1, a2, a3, tm = ecbf_row[mi]
+                # ecbf_upper_bound (Eq 19)
+                state_terms = eF**2 * MA + R_eff * eF * MA - R_eff**2 * MF
+                a1_term = a1 * (-eF * MA + R_eff * MF)
+                psi1_val = (-eF * MA + R_eff * MF) + a1 * (tm - MF)
+                ub_ecbf = (state_terms + a1_term + a2 * psi1_val) / eF
+                # cbf_upper_bound (Eq 23)
+                ub_cbf = R_eff * MF + a3 * (1.0 - MA - MF)
+                C = min(C_nominal, ub_ecbf, ub_cbf)
+                C = max(0.0, C)
             else:
                 C = max(0.0, C_nominal)
             # Track ECBF interventions
@@ -244,6 +263,7 @@ class WarehousePettingZoo:
         ecbf_clip_total = 0.0
         barrier_violations = 0
         worker_theta = self.theta_max_per_worker[worker_idx]
+        ecbf_row = self._ecbf_cache[worker_idx]
         for mi, m in enumerate(self.muscle_names):
             p = self.muscle_params[m]
             F, R_base, r = p["F"], p["R"], p["r"]
@@ -253,10 +273,15 @@ class WarehousePettingZoo:
             C_nominal = float(c_nom_per_muscle[mi])
             R_eff = R_base if TL > 0 else R_base * r
             if self.ecbf_mode == "on":
-                state = ThreeCCrState(MR=MR, MA=MA, MF=MF)
-                C, _infeasible = self.ecbf_filters[worker_idx][m].filter_analytical(
-                    state, C_nominal, TL
-                )
+                # Inlined filter_analytical (same as _integrate).
+                eF, a1, a2, a3, tm = ecbf_row[mi]
+                state_terms = eF**2 * MA + R_eff * eF * MA - R_eff**2 * MF
+                a1_term = a1 * (-eF * MA + R_eff * MF)
+                psi1_val = (-eF * MA + R_eff * MF) + a1 * (tm - MF)
+                ub_ecbf = (state_terms + a1_term + a2 * psi1_val) / eF
+                ub_cbf = R_eff * MF + a3 * (1.0 - MA - MF)
+                C = min(C_nominal, ub_ecbf, ub_cbf)
+                C = max(0.0, C)
             else:
                 C = max(0.0, C_nominal)
             if C_nominal > 1e-9 and (C_nominal - C) > 1e-9:

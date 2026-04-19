@@ -119,7 +119,11 @@ class IPPO:
         }, path)
 
     def load(self, path):
-        ckpt = torch.load(path, map_location=self.device)
+        # weights_only=False: PyTorch 2.6+ defaults to True, which rejects
+        # the per-agent optimizer state-dicts we save here. Without this,
+        # --resume silently fails to restore optimizer state and Batch B's
+        # bit-identical resume guarantee evaporates.
+        ckpt = torch.load(path, map_location=self.device, weights_only=False)
         for i, sd in enumerate(ckpt["actors"]): self.actors[i].load_state_dict(sd)
         for i, sd in enumerate(ckpt["critics"]): self.critics[i].load_state_dict(sd)
         if "actor_optims" in ckpt:

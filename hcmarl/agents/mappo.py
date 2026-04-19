@@ -344,7 +344,11 @@ class MAPPO:
         }, path)
 
     def load(self, path):
-        ckpt = torch.load(path, map_location=self.device)
+        # weights_only=False: PyTorch 2.6+ defaults to True, which rejects
+        # the optimizer state-dicts we save here. Without this, --resume
+        # silently fails to restore optimizer momentum/variance and Batch B's
+        # bit-identical resume guarantee evaporates.
+        ckpt = torch.load(path, map_location=self.device, weights_only=False)
         self.actor.load_state_dict(ckpt["actor"])
         self.critic.load_state_dict(ckpt["critic"])
         if "actor_optim" in ckpt:

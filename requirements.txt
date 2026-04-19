@@ -20,10 +20,18 @@ pytest-cov>=4.1.0
 matplotlib>=3.7.0
 wandb>=0.16.0
 
-# RL framework (used from Phase 3 onward)
-# torch>=2.0.0
-# gymnasium>=0.29.0
-# pettingzoo>=1.24.0
+# RL framework (required for training, tests, and all agent code)
+# NOTE: On GPU hosts (CUDA), install torch from the CUDA wheel index BEFORE
+# running `pip install -r requirements.txt` so the line below is satisfied
+# by the CUDA build (CPU wheel would otherwise be fetched from PyPI):
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+# cu124 wheels are forward-compatible with CUDA 12.5/12.6/12.7/12.8 drivers.
+# Minimum 2.6.0 is required for `weights_only=False` resume behaviour used
+# by every agent loader (see 2026-04-17 execution hardening).
+torch>=2.6.0
+gymnasium>=0.29.0
+# NOTE: pettingzoo is intentionally NOT a runtime dep. hcmarl.envs.pettingzoo_wrapper
+# implements the PettingZoo parallel-env API surface without importing the library.
 
 # Real benchmark environments (Phase 4B: legitimacy upgrade)
 # rware>=1.0.0                    # RWARE multi-agent warehouse benchmark

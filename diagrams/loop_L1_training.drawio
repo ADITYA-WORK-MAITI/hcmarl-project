@@ -1,0 +1,78 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="L1" name="L1 Training Loop">
+    <mxGraphModel dx="1400" dy="550" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="550" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="t" value="L1: Training Loop  (while global_step &lt; 5M)" style="text;html=1;fontSize=14;fontStyle=1;align=center;fontColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="200" y="15" width="1000" height="25" as="geometry"/>
+        </mxCell>
+
+        <!-- Col 1: Inputs from L0 -->
+        <mxCell id="c1" value="&lt;b&gt;Inputs from L0&lt;/b&gt;&lt;br&gt;&lt;br&gt;θ_max(z) per worker&lt;br&gt;(F, R, r) per muscle&lt;br&gt;Constraint net weights" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="180" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- Col 2: Episode Reset -->
+        <mxCell id="c2" value="&lt;b&gt;Episode Reset&lt;/b&gt;&lt;br&gt;&lt;br&gt;env.reset()&lt;br&gt;Init MR=1, MA=0, MF=0&lt;br&gt;per worker per muscle&lt;br&gt;obs_0, global_state_0" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="280" y="80" width="190" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- Col 3: L2 Episode (reference box) -->
+        <mxCell id="c3" value="&lt;b&gt;L2: Run Episode&lt;/b&gt;&lt;br&gt;(max_steps env steps)&lt;br&gt;&lt;br&gt;Contains &lt;b&gt;L3&lt;/b&gt; (NSWF + ECBF)&lt;br&gt;&lt;i&gt;See diagram L2 for detail&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#0D47A1;strokeWidth=2;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="530" y="80" width="220" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- Col 4: L4 Update (reference box) -->
+        <mxCell id="c4" value="&lt;b&gt;L4: PPO-Lagrangian Update&lt;/b&gt;&lt;br&gt;10 epochs × minibatches&lt;br&gt;&lt;br&gt;Actor + Value Critic +&lt;br&gt;Cost Critic + λ update&lt;br&gt;&lt;i&gt;See diagram L4 for detail&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;strokeWidth=2;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="810" y="80" width="220" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- Col 5: Log & Checkpoint -->
+        <mxCell id="c5" value="&lt;b&gt;Log &amp; Checkpoint&lt;/b&gt;&lt;br&gt;&lt;br&gt;Log 9 metrics (O1–O9)&lt;br&gt;Checkpoint if best reward&lt;br&gt;Eval if interval hit&lt;br&gt;global_step += ep_steps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="80" width="190" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- Forward arrows -->
+        <mxCell id="a12" value="params" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;fontSize=9;" edge="1" parent="1" source="c1" target="c2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a23" value="obs_0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;fontSize=9;" edge="1" parent="1" source="c2" target="c3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a34" value="buffer full" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;fontSize=9;" edge="1" parent="1" source="c3" target="c4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a45" value="updated θ" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#333;strokeWidth=1.5;fontSize=9;" edge="1" parent="1" source="c4" target="c5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- L1 return arrow -->
+        <mxCell id="loop_back" value="next episode (if global_step &lt; 5M)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#C62828;strokeWidth=1.8;dashed=1;dashPattern=10 5;fontSize=9;fontColor=#C62828;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" edge="1" parent="1" source="c5" target="c2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1185" y="260"/>
+              <mxPoint x="375" y="260"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Dashed highlight on L2+L4 -->
+        <mxCell id="inner_highlight" value="" style="rounded=1;whiteSpace=wrap;fillColor=none;strokeColor=#C62828;strokeWidth=1.5;dashed=1;dashPattern=6 4;arcSize=5;" vertex="1" parent="1">
+          <mxGeometry x="520" y="65" width="520" height="125" as="geometry"/>
+        </mxCell>
+        <mxCell id="inner_label" value="Inner loops L2, L3, L4 (see separate diagrams)" style="text;html=1;fontSize=9;fontColor=#C62828;fontStyle=2;align=center;" vertex="1" parent="1">
+          <mxGeometry x="570" y="62" width="400" height="14" as="geometry"/>
+        </mxCell>
+
+        <!-- Footer -->
+        <mxCell id="note1" value="Repeats: ~episodes until 5M total env steps. 5 seeds run independently (separate train.py invocations)." style="text;html=1;fontSize=10;fontColor=#555;align=center;" vertex="1" parent="1">
+          <mxGeometry x="200" y="310" width="1000" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="refs" value="Math doc refs:  training pipeline = §7.3 (steps 1–7)  |  PPO = Achiam+ 2017 (CMDP)  |  9 metrics = O1–O9" style="text;html=1;fontSize=9;fontColor=#888;align=center;" vertex="1" parent="1">
+          <mxGeometry x="200" y="340" width="1000" height="18" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

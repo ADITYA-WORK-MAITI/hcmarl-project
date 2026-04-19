@@ -390,7 +390,11 @@ class MAPPOLagrangian:
         }, path)
 
     def load(self, path):
-        ckpt = torch.load(path, map_location=self.device)
+        # weights_only=False: PyTorch 2.6+ defaults to True, which rejects
+        # the optimizer state-dicts and the log_lambda tensor we save here.
+        # Without this, --resume silently loses the dual variable and
+        # Batch B's bit-identical resume guarantee evaporates.
+        ckpt = torch.load(path, map_location=self.device, weights_only=False)
         self.actor.load_state_dict(ckpt["actor"])
         self.critic.load_state_dict(ckpt["critic"])
         self.cost_critic.load_state_dict(ckpt["cost_critic"])

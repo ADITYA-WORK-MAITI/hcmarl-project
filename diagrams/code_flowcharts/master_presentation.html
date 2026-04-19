@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<title>HC-MARL Framework — Presentation</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fff;--ink:#111;--mute:#555;--line:#e3e3e3;--accent:#1f4ed8;--soft:#f6f7f9;--core:#2b6cb0;--env:#2f855a;--agent:#b7791f;--script:#9f1239;--infra:#553c9a;}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,sans-serif;font-size:15px;line-height:1.6}
+code,pre,.mono{font-family:'JetBrains Mono',monospace;font-size:13px}
+header{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid var(--line);padding:14px 28px}
+h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-0.01em}
+h1 small{font-weight:400;color:var(--mute);margin-left:10px;font-size:13px}
+nav.tabs{display:flex;gap:4px;margin-top:10px;flex-wrap:wrap}
+nav.tabs button{background:var(--soft);border:1px solid var(--line);color:var(--ink);padding:7px 14px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;border-radius:4px}
+nav.tabs button.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+nav.tabs button:hover:not(.active){background:#ececec}
+.tab{display:none;padding:32px 48px;max-width:1280px;margin:0 auto}
+.tab.active{display:block}
+.tab.full{max-width:none;padding:0}
+.tab.full iframe{width:100%;height:calc(100vh - 100px);border:0;display:block}
+h2.section{font-size:24px;font-weight:700;margin:0 0 6px;letter-spacing:-0.01em}
+.lede{color:var(--mute);font-size:14px;margin:0 0 28px;max-width:780px}
+
+/* --- Tab 1 box-cards --- */
+.boxcard{border:1px solid var(--line);border-radius:6px;padding:20px 24px;margin-bottom:20px;background:#fff}
+.boxcard h3{margin:0 0 6px;font-size:16px;font-weight:600;display:flex;align-items:center;gap:10px}
+.boxcard .id{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute)}
+.tag{display:inline-block;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase}
+.tag-core{background:#e6f0fb;color:var(--core)}
+.tag-env{background:#e7f5ec;color:var(--env)}
+.tag-agent{background:#fdf3e0;color:var(--agent)}
+.tag-script{background:#fde6ec;color:var(--script)}
+.tag-infra{background:#ede5f7;color:var(--infra)}
+.def{font-weight:500;color:#111;margin:8px 0 12px;font-size:14px;border-left:3px solid var(--accent);padding-left:10px}
+.work{margin:0 0 14px}
+.work ul{margin:4px 0 0;padding-left:18px}
+.work li{margin-bottom:5px;font-size:14px}
+.arrows{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid var(--line);font-size:13px}
+.arrows>div{padding:12px 14px}
+.arrows>div:first-child{border-right:1px solid var(--line)}
+.arrows b{display:block;font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px}
+.arrows ul{margin:0;padding-left:14px}
+.arrows li{margin-bottom:5px}
+.arrows code{font-size:11px}
+
+/* --- Tab 2 fusion layout --- */
+.fusion{display:grid;grid-template-columns:60% 40%;gap:0;border-top:1px solid var(--line)}
+.fusion .micro{padding:28px 28px;border-right:1px solid var(--line)}
+.fusion .macro{padding:28px 28px;position:sticky;top:90px;align-self:start;background:var(--soft);font-size:14px}
+.phase{margin-bottom:36px;scroll-margin-top:120px}
+.phase h4{margin:0 0 8px;font-size:15px;font-weight:700;color:var(--accent)}
+.phase .lbl{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);margin-bottom:10px}
+.phase p{margin:0 0 10px;font-size:14px}
+.phase ul{margin:4px 0 10px;padding-left:18px;font-size:14px}
+.phase li{margin-bottom:4px}
+.phase code{background:var(--soft);padding:1px 5px;border-radius:3px;font-size:12px}
+.macro h4{font-size:13px;font-weight:700;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.05em;color:var(--mute)}
+.macro p{margin:0 0 16px}
+.dsbox{border:1px solid var(--line);border-radius:5px;padding:14px 16px;margin-bottom:18px;background:#fff}
+.dsbox h4{margin:0 0 6px;font-size:14px;font-weight:600}
+.dsbox p{margin:0 0 4px;font-size:13px}
+
+/* --- Tab 3 --- */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px}
+.panel{border:1px solid var(--line);border-radius:6px;padding:20px}
+.panel h3{margin:0 0 10px;font-size:16px;font-weight:600}
+.panel ul{margin:6px 0 0;padding-left:18px}
+.panel li{margin-bottom:6px;font-size:14px}
+.objcard{border:1px solid var(--line);border-radius:6px;padding:16px 20px;margin-bottom:14px;background:#fff}
+.objcard h4{margin:0 0 4px;font-size:14px;font-weight:600}
+.objcard .loc{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);margin-bottom:6px}
+.objcard .formula{font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--soft);padding:6px 10px;border-radius:3px;display:block;margin:6px 0;white-space:pre-wrap}
+.objcard p{margin:4px 0;font-size:13px}
+.perfcard{border:1px solid var(--line);border-radius:6px;padding:14px 18px;margin-bottom:12px;background:#fff}
+.perfcard h4{margin:0 0 2px;font-size:14px;font-weight:600}
+.perfcard .loc{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);margin-bottom:4px}
+.perfcard p{margin:4px 0;font-size:13px}
+.perfcard .dir{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:3px;margin-left:6px}
+.dir-low{background:#e7f5ec;color:var(--env)}
+.dir-high{background:#e6f0fb;color:var(--core)}
+
+/* --- Tab 4 --- */
+.viz{margin-bottom:36px}
+.viz h3{margin:0 0 10px;font-size:17px;font-weight:600}
+.viz .cap{font-size:12px;color:var(--mute);margin-top:6px}
+.svgwrap{border:1px solid var(--line);border-radius:6px;padding:14px;background:#fff}
+.tentative{display:inline-block;background:#fff3cd;color:#856404;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;letter-spacing:0.05em;margin-left:8px}
+.journey{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:12px}
+.journey .step{border:1px solid var(--line);border-radius:5px;padding:10px;font-size:12px;background:#fff}
+.journey .step b{display:block;font-size:11px;color:var(--accent);margin-bottom:4px}
+.kbd{font-family:'JetBrains Mono',monospace;font-size:10px;background:var(--soft);border:1px solid var(--line);padding:1px 5px;border-radius:3px}
+</style>
+</head>
+<body>
+<header>
+<h1>HC-MARL Framework <small>Presentation — five tabs. Keys <span class="kbd">0</span>–<span class="kbd">4</span> to switch.</small></h1>
+<nav class="tabs">
+<button class="tabbtn active" data-tab="0">0 · Slideshow (85 steps)</button>
+<button class="tabbtn" data-tab="1">1 · Definition &amp; Explanation</button>
+<button class="tabbtn" data-tab="2">2 · How It Works</button>
+<button class="tabbtn" data-tab="3">3 · Status, Objectives, Performance, Novelty</button>
+<button class="tabbtn" data-tab="4">4 · Visualisation</button>
+</nav>
+</header>
+
+<!-- ===== TAB 0 ===== -->
+<section class="tab full active" id="tab0">
+<iframe src="master_slideshow.html" title="Master slideshow"></iframe>
+</section>
+
+<!-- ===== TAB 1 — DEFINITION & EXPLANATION ===== -->
+<section class="tab" id="tab1">
+<h2 class="section">Definition &amp; Explanation</h2>
+<p class="lede">Twenty-eight boxes from the slideshow, taken one at a time. For each box I give you a definition, then one paragraph on how it actually works, then one paragraph on how the arrows entering and leaving the box serve <em>this specific box</em>. Read it top to bottom and you should walk away understanding the architecture.</p>
+
+<!-- 1. utils -->
+<div class="boxcard"><h3><span class="tag tag-core">core</span> hcmarl/utils.py <span class="id">utils</span></h3>
+<p class="def">Stateless numerical helpers — <code>safe_log</code>, <code>clip_and_normalise</code>, <code>load_yaml</code>, <code>get_logger</code> — shared across all modules.</p>
+<div class="work"><p>This is the file I write first in any project, because everything else assumes it. <code>clip_and_normalise</code> (line 96) clamps an array to <code>[0,1]</code> and renormalises it to sum to one — I call it after every ODE tick so the conservation law <code>MR + MA + MF = 1</code> never silently drifts. From the same file, <code>safe_log</code> (line 115) is the trick that lets the NSWF allocator take <code>log(surplus)</code> without falling off a cliff when a worker is fully fatigued and the surplus collapses to zero. Around those two numerical primitives sit <code>load_yaml</code> (line 50), which hydrates configs into dicts for the training script and every launcher, and <code>get_logger</code> (line 23), which returns a consistently formatted Python logger so every module's diagnostics look the same in the terminal.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>None — this module is a leaf. It deliberately imports nothing from the rest of the codebase, which is what makes it safe to import everywhere else without creating cycles.</p></div>
+<div><b>Arrows out</b><p>From here, <code>safe_log</code> walks down into <code>nswf_allocator.py:26</code>, which is the only place in the codebase where <code>log</code> is taken of a quantity that can legitimately reach zero — without this helper the allocator would crash the moment any worker reached <code>D_i = U_ij</code>. <code>load_yaml</code> and <code>get_logger</code> together feed <code>pipeline.py:33</code>, where the closed-loop simulator reads its config and emits the per-step diagnostics that the test suite later asserts against.</p></div></div></div>
+
+<!-- 2. three_cc_r -->
+<div class="boxcard"><h3><span class="tag tag-core">core</span> hcmarl/three_cc_r.py <span class="id">three_cc_r</span></h3>
+<p class="def">The 3CC-r ODE model: three muscle compartments (active MA, fatigued MF, resting MR) with a reperfusion multiplier, integrated forward in time.</p>
+<div class="work"><p>This is the physiological heart of the framework, and it earns that title by doing exactly one thing: it tells you, for any neural drive <code>C</code> you push into a muscle, how the three compartments — resting <code>MR</code>, active <code>MA</code>, fatigued <code>MF</code> — evolve over time. The state lives inside a frozen <code>MuscleParams</code> dataclass that holds the three calibrated rate constants <code>F</code> (fatigue), <code>R</code> (recovery) and <code>r</code> (the reperfusion multiplier that boosts recovery during rest). Six muscle groups are pre-instantiated at lines 79–84 — <code>SHOULDER(F=0.0146, R=0.00058, r=15)</code>, then <code>ANKLE</code>, <code>KNEE</code>, <code>ELBOW</code>, <code>TRUNK</code>, and <code>GRIP</code> with <code>r=30</code> for the forearm flexors — all taken from the isometric population means in Frey-Law, Looft &amp; Heitsman (2012) Table 2. From those three numbers the file derives the quantities the rest of the codebase actually uses: <code>C_max = F·R/(F+R)</code> and <code>delta_max = R/(F+R)</code> from Eq 6, and the safety threshold <code>theta_min_max = F/(F+R·r)</code> from Eq 25 that the ECBF filter inherits as its lower bound. The integrator itself is one line of physics per compartment — <code>dMA/dt = C − F·MA</code>, <code>dMF/dt = F·MA − R_eff·MF</code>, <code>dMR/dt = R_eff·MF − C</code> — switched by Eq 5 so that <code>R_eff</code> equals the slow base rate <code>R</code> while the muscle is loaded and jumps to <code>R·r</code> the instant the load drops to zero. Theorem 3.2 then guarantees that <code>MR + MA + MF</code> stays at one forever.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>Nothing arrives here. This is a deliberate leaf dependency — keeping it free of internal imports means the physiology can never accidentally develop a cyclic relationship with the safety filter or the allocator that builds on top of it.</p></div>
+<div><b>Arrows out</b><p>From here, <code>MuscleParams</code> and <code>ThreeCCrState</code> walk into <code>ecbf_filter.py:26</code>, because the QP that enforces safety needs the very same <code>(F, R, r)</code> triple to compute the barrier coefficients and the validity condition. The same dataclass plus the <code>SHOULDER</code> instance and the <code>ThreeCCr</code> integrator flow into <code>real_data_calibration.py:37</code>, where Path G re-fits these parameters against WSD4FEDSRM endurance times so the simulator stops running on textbook averages and starts running on measured human data. The integrator itself is consumed by <code>pipeline.py:26–32</code> as the state-update step in the seven-step loop, while the <code>get_muscle</code> lookup is called at line 32 of <code>pettingzoo_wrapper.py</code> at environment construction time, once per muscle, so each worker boots with the right rate constants.</p></div></div></div>
+
+<!-- 3. ecbf_filter -->
+<div class="boxcard"><h3><span class="tag tag-core">core</span> hcmarl/ecbf_filter.py <span class="id">ecbf</span></h3>
+<p class="def">Relative-degree-2 exponential control barrier function: solves a QP every step to project the nominal control onto the safe set.</p>
+<div class="work"><p>The job of this file is to take whatever neural drive the policy proposes and project it onto the closest control that the physics still considers safe. Two barriers run in parallel — a fatigue ceiling <code>h(x) = theta_max − MF ≥ 0</code> from Eq 12, and a resting floor <code>h2(x) = MR ≥ 0</code> from Eq 23 — and both have to hold at every step, otherwise the projection is invalid. To enforce them, the file builds a quadratic program at line 270 that minimises <code>||C − C_nom||²</code> subject to the ECBF enforcement condition from Eq 18 (<code>−F·C + F²·MA + R_eff·F·MA − R_eff²·MF + α₁·h_dot + α₂·ψ₁ ≥ 0</code>) and the resting-floor CBF from Eq 23 (<code>C ≤ R_eff·MF + α₃·MR</code>), with <code>C ≥ 0</code> as a hard non-negativity constraint. The four design knobs live in an <code>ECBFParams</code> dataclass at line 30 — <code>theta_max</code>, <code>alpha1=0.05</code>, <code>alpha2=0.05</code>, <code>alpha3=0.1</code> — and the file's <code>validate()</code> method checks the existence condition from Assumption 5.5 (<code>theta_max ≥ F/(F+R·r)</code>) before letting the filter run, because if that inequality fails the safe set is empty and projecting onto it is meaningless. When the condition is satisfied, Theorem 5.7 (rest-phase Nagumo invariance) takes over and guarantees the state stays inside the safe set forever during rest. The CVXPY solver at line 309 occasionally raises a "solution may be inaccurate" warning during pipeline tests, but it has been verified to be non-fatal — the returned solution still satisfies all constraints.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>The <code>MuscleParams</code> and <code>ThreeCCrState</code> dataclasses arrive from <code>three_cc_r.py</code>, and they have to arrive — the QP coefficients are literally functions of <code>F</code>, <code>R</code>, <code>r</code>, and the current <code>(MR, MA, MF)</code>. Without that import, this file would not know which barrier to enforce.</p></div>
+<div><b>Arrows out</b><p>What leaves this file is a single number per step: the filtered control <code>C_safe</code>. It walks straight into <code>pipeline.py</code>, where the seven-step loop refuses to integrate the ODE until the projection has happened. <code>C_safe</code> replaces <code>C_nom</code> at step 5 of every loop iteration, which is the entire reason the framework can claim hard safety rather than statistical safety.</p></div></div></div>
+
+<!-- 4. nswf_allocator -->
+<div class="boxcard"><h3><span class="tag tag-core">core</span> hcmarl/nswf_allocator.py <span class="id">nswf</span></h3>
+<p class="def">Nash Social Welfare allocator: maximises the log-sum of worker surpluses to find a fair task assignment under fatigue.</p>
+<div class="work"><p>This file decides who does what, and it does so under a fairness criterion that has a name and a theorem behind it (Nash 1950, Kaneko &amp; Nakamura 1979) rather than a heuristic. The starting point is the disagreement utility from Eq 32, <code>D_i(MF) = kappa·MF²/(1−MF)</code>, which diverges as a worker's fatigue approaches one — physically saying that a near-exhausted worker has no surplus left to give to any task. From there, the surplus a worker actually gets from being assigned a task is <code>S_ij = U(i,j) − D_i(MF_i)</code>, and the allocator only considers assignments where every surplus is strictly positive, because anything else would violate individual rationality. The Nash welfare objective from Eq 33 then asks for the assignment that maximises <code>sum_i log(S_ij)</code> — the log transform turns the product of surpluses into a sum, which is exactly the form RL gradients are happy with downstream. Two solvers are available: <code>_solve_exact</code> at line 231 enumerates every valid assignment when the problem is small, and a greedy fallback handles larger ones. The result comes back as an <code>AllocationResult</code> dataclass at line 302 carrying the chosen assignment, the achieved objective value, and the per-worker surplus and disagreement values that the logger and the diagnostics consume.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>One thing arrives — <code>safe_log</code> from <code>utils.py:115</code> — and the only reason it has to be the safe variant is that line 266 of this file is exactly where <code>log(surplus)</code> would otherwise crash the solver the moment a worker's surplus touched zero. The dependency is small but load-bearing.</p></div>
+<div><b>Arrows out</b><p>The assignment dictionary and objective value walk into <code>pipeline.py</code>, which uses them at step 2 of the seven-step loop to decide which task each worker tackles next. Just as importantly, the same mathematical formula is reimplemented at line 43 of <code>reward_functions.py</code> as the per-step RL reward, so the allocator and the reward signal share the exact same definition of welfare — that alignment is why a policy trained to maximise cumulative reward ends up implicitly maximising the Nash product of surpluses.</p></div></div></div>
+
+<!-- 5. pipeline -->
+<div class="boxcard"><h3><span class="tag tag-core">core</span> hcmarl/pipeline.py <span class="id">pipeline</span></h3>
+<p class="def">Seven-step orchestration loop (Section 7.3): read state, allocate, translate load, compute neural drive, ECBF filter, integrate ODE, log.</p>
+<div class="work"><p>If you want to know whether the four core modules agree on signs and units, this is the file that finds out. It opens by importing <code>ECBFFilter</code>, <code>NSWFAllocator</code>, <code>ThreeCCr</code> with <code>get_muscle</code>, and <code>load_yaml</code> with <code>get_logger</code> at lines 24–33, then defines a <code>TaskProfile</code> dataclass at line 43 (Def 7.1) that holds the per-muscle demand vector for each task. The body of the file is the seven-step loop from Section 7.3 of the math doc, and it runs in exactly that order: observe each worker's state <code>x_i(t) = [MR, MA, MF]</code>, hand the state matrix to the NSWF allocator and let it pick a task per worker, translate each picked task into a per-muscle target load through the <code>TaskProfile</code> table, ask the baseline proportional controller (or, in training, the RL policy) for a nominal neural drive, project that drive through the ECBF QP to get <code>C_safe</code>, advance the 3CC-r ODE one tick under <code>C_safe</code>, and finally log everything that just happened. No optimisation runs in this file — that is the point. It is the trustworthy backbone that the RL stack later wraps.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>Four imports converge on this file because the seven-step loop needs all four primitives in lockstep: <code>ECBFFilter</code> from <code>ecbf_filter.py</code> handles the safety projection at step 5, <code>NSWFAllocator</code> from <code>nswf_allocator.py</code> handles the assignment at step 2, <code>ThreeCCr</code> and <code>get_muscle</code> from <code>three_cc_r.py</code> drive the integration at step 6 and provide the muscle registry, and <code>load_yaml</code> with <code>get_logger</code> from <code>utils.py</code> handle config hydration and per-step diagnostics. Drop any one of those four and the loop cannot close.</p></div>
+<div><b>Arrows out</b><p>What leaves this file is trajectory data — full <code>(MR, MA, MF, C_safe, reward, cost)</code> sequences — which walks straight into <code>tests/</code>. The test suite runs the pipeline end-to-end and asserts mass conservation, safety-set membership, and reward sign properties on the resulting trajectories, which is how a regression in any one of the four core modules surfaces as a pipeline test failure rather than a silent drift.</p></div></div></div>
+
+<!-- 6. mmicrl -->
+<div class="boxcard"><h3><span class="tag tag-core">core</span> hcmarl/mmicrl.py <span class="id">mmicrl</span></h3>
+<p class="def">Multi-Modal Inverse Constrained RL: discovers latent worker types from demonstrations and learns per-type safety thresholds using normalizing flows.</p>
+<div class="work"><p>This is the file that takes "workers are not interchangeable" seriously. The starting question is simple — given a pile of demonstrations from people with different bodies, can you discover the latent <em>types</em> they belong to and learn a different safety threshold for each? The answer is built out of a CFDE normalising flow at line 220, which is a stack of MADE/MAF blocks conditioned on a one-hot type vector <code>z</code> and trained to compute <code>log p(x|z)</code> for per-step features <code>x = (state, action)</code>. On top of that flow runs an EM loop at line 332: the E-step at line 282 assigns each trajectory to its most likely type via <code>argmax_z p(z|tau)</code>, using a tempered, mean-aggregated trajectory-level posterior at line 288 that prevents trajectory length from collapsing the assignments, and the M-step at line 369 then maximises <code>−log p(x|z).mean()</code> under the new assignments. Sitting above the flow is the MMICRL outer objective at line 1070 from Eq 10 — <code>lambda2·I(tau;z) + (lambda1−lambda2)·H[pi(tau)]</code> — which collapses to pure mutual information whenever the two lambdas are equal. Once types are settled, the <code>ConstraintNetwork</code> at line 468 takes over: it is a small MLP trained with binary cross-entropy at line 514 to discriminate expert states (label 1) from agent states (label 0), and the per-type, per-muscle <code>theta_max</code> is read off as the MF value where the network's cost output crosses 0.5. The <code>DemonstrationCollector</code> at line 549 is the bookkeeping piece that records <code>(obs[agent].copy(), action)</code> tuples per step per agent during rollouts (line 582), and <code>fit()</code> at line 1030 ties the whole sequence together: extract features, run CFDE EM, compute MI, learn the per-type constraint boundaries, and return the <code>theta_per_type</code> dictionary.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>The only structural import comes through a lazy edge: <code>real_data_calibration.py:962</code> reaches up and grabs <code>DemonstrationCollector</code> from this file at runtime. The lazy form is deliberate — it avoids a circular import while still letting the calibration module convert WSD4FEDSRM-anchored profiles into demonstrations that this file's collector can ingest, so the type discovery is grounded in real bodies rather than synthetic ones.</p></div>
+<div><b>Arrows out</b><p>The headline output is a <code>theta_per_type</code> dictionary, and it walks straight into <code>pettingzoo_wrapper.py</code>, where the environment uses it at reset to set a personalised safety ceiling for each worker — no two workers in the same episode necessarily share a <code>theta_max</code>, which is the entire point of building MMICRL in the first place. Alongside that, the type assignments and likelihoods flow back into <code>real_data_calibration.py</code> for the downstream analysis of which WSD4FEDSRM subjects cluster into which latent type.</p></div></div></div>
+
+<!-- 7. real_data -->
+<div class="boxcard"><h3><span class="tag tag-core">core</span> hcmarl/real_data_calibration.py <span class="id">real_data</span></h3>
+<p class="def">Path G: calibrates 3CC-r parameters against the WSD4FEDSRM dataset (34 participants, dynamic shoulder rotations) and produces correlated population samples.</p>
+<div class="work"><p>This is the file that answers "are your muscle parameters real or convenient?" The answer starts with the WSD4FEDSRM dataset (Zenodo 8415066, Nature Scientific Data 2024) — thirty-four healthy participants performing dynamic shoulder internal/external rotation at 30–60% MVIC until maximal exhaustion (Borg RPE 20). For each subject, <code>predict_endurance_time</code> at line 44 simulates the 3CC-r ODE with the baseline proportional controller (Eq 35) at their recorded %MVC until the resting pool depletes below <code>MR &lt; 1e-4</code>, and a grid search sweeps <code>(F, R)</code> to find the pair that minimises <code>|ET_observed − ET_predicted|</code>. That gives me per-subject, per-shoulder calibrated parameters anchored to measured data. For the five non-shoulder muscles — ankle, knee, elbow, trunk, grip — per-subject endurance data does not exist, so the <code>POPULATION_FR</code> dictionary at line 473 fills in with published isometric population means from Frey-Law et al. (2012) Table 2, and correlated sampling using <code>CV_F</code> at line 483 generates synthetic individual variation that preserves the inter-subject spread the literature reports. At line 962, the file lazy-imports <code>DemonstrationCollector</code> from <code>mmicrl</code> to convert these calibrated physiological profiles into <code>(state, action)</code> demonstrations, so that MMICRL's type-discovery pipeline runs on data grounded in real bodies rather than imagined ones.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p><code>MuscleParams</code>, the <code>ThreeCCr</code> integrator, and the <code>SHOULDER</code> pre-calibrated instance all arrive from <code>three_cc_r.py:37</code>. Without them this file could not run the forward simulation that the grid-search calibration loops over — the calibration is literally fitting the parameters of the model defined in that module.</p></div>
+<div><b>Arrows out</b><p>Two things leave. First, at line 962, a lazy import reaches up into <code>mmicrl.py</code> to grab <code>DemonstrationCollector</code> and feed the calibrated trajectories into the type-discovery pipeline, closing the loop between real-data physiology and latent-type inference. Second, the calibrated <code>(F, R, r)</code> tuples are baked into <code>config/*.yaml</code>, so that at training time the environment boots with real-data-grounded dynamics instead of the textbook population means.</p></div></div></div>
+
+<!-- 8. warehouse_env -->
+<div class="boxcard"><h3><span class="tag tag-env">env</span> hcmarl/envs/warehouse_env.py <span class="id">warehouse</span></h3>
+<p class="def">Single-worker discrete environment with action space <code>Discrete(4)</code>, wrapping one 3CC-r body and one task.</p>
+<div class="work"><p>This is the atomic unit — one human body, one task, one <code>ThreeCCr</code> instance. The action space is <code>Discrete(4)</code>, and a call to <code>reset()</code> gives back an observation vector that concatenates the six muscles' <code>(MR, MA, MF)</code> triples with a task index; <code>step(action)</code> advances the ODE one tick and returns the new obs, reward, done flag, and info dict. There is no multi-agent logic here, no reward shaping, no coordination — just a clean interface around one body that does exactly one thing at a time.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>Muscle state initialisation comes from <code>three_cc_r</code> — every call to <code>reset()</code> creates a fresh <code>(MR=1, MA=0, MF=0)</code> state, which is the fully-rested starting point defined by the ODE model.</p></div>
+<div><b>Arrows out</b><p>The PettingZoo wrapper in <code>pettingzoo_wrapper.py</code> tiles N of these single-worker environments into one synchronous multi-agent environment. This box is the atomic brick that gets stacked — every worker in every experiment is one instance of this class.</p></div></div></div>
+
+<!-- 9. pettingzoo_wrapper -->
+<div class="boxcard"><h3><span class="tag tag-env">env</span> hcmarl/envs/pettingzoo_wrapper.py <span class="id">pettingzoo</span></h3>
+<p class="def">PettingZoo parallel environment for N warehouse workers: bundles single-worker envs into one synchronous multi-agent step.</p>
+<div class="work"><p>This is the contract that every method signs. It composes N single-worker environments into one PettingZoo parallel environment, and it enforces, by construction, that every method sees the same observation shape, the same reward function, and the same action space. For the default three-worker setup, each worker observes a 19-dimensional vector (<code>obs_dim = 6 muscles × 3 compartments + 1 task index</code>, line 60) and the centralised critic sees a 55-dimensional global state (<code>global_obs_dim = 3 workers × 18 + 1</code>, line 61). At construction time (lines 41–54), the wrapper accepts a per-worker, per-muscle <code>theta_max</code> dictionary — typically the output of MMICRL — and falls back to defaults (shoulder 0.70, ankle 0.80, etc.) if none is provided, so each worker runs with personalised safety ceilings from the start. The core physics step lives in <code>_integrate</code> at line 86, which advances the 3CC-r ODE with an inline ECBF analytical clipping pass that matches the coefficients in <code>ecbf_filter.py</code> exactly; this dual implementation keeps the environment self-contained while staying numerically aligned with the standalone filter. Every call to <code>step(actions)</code> at line 140 returns the standard PettingZoo dict-of-dicts — obs, rewards, terminations, truncations, infos — so the trainer never has to special-case anything.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>Four things converge here: <code>nswf_reward</code> and <code>safety_cost</code> from <code>reward_functions.py:7</code>, which the wrapper calls inside every <code>step()</code> to produce the reward and cost signals that the agents learn from; <code>get_muscle</code> from <code>three_cc_r.py:32</code>, called at construction to initialise the per-muscle <code>(F, R, r)</code> dictionaries for the ODE; <code>TaskProfileManager</code> from <code>task_profiles.py</code> at line 17, which translates a discrete action (a task id) into the per-muscle demand vector the ODE consumes; and the per-worker <code>theta_max</code> dictionary from <code>mmicrl.py</code>, which personalises the safety ceiling so the ECBF inside <code>_integrate</code> clips to the right boundary for each worker.</p></div>
+<div><b>Arrows out</b><p>The constructed environment instance is the single object that <code>scripts/train.py</code> and <code>scripts/evaluate.py</code> instantiate. Every training method and every evaluation run — all seven methods, all ten baselines, all ablations and scaling sweeps — passes through this one wrapper. If the observation shape, reward formula, or action space ever drifted between methods, the entire comparative evaluation would be meaningless.</p></div></div></div>
+
+<!-- 10. reward_fn -->
+<div class="boxcard"><h3><span class="tag tag-env">env</span> hcmarl/envs/reward_functions.py <span class="id">reward_fn</span></h3>
+<p class="def">Pure functions for NSWF-shaped reward and safety cost — no state, no class, testable in isolation.</p>
+<div class="work"><p>Three pure functions, no state, no class — deliberately kept stateless so they can be unit-tested in complete isolation. <code>disagreement_utility</code> at line 33 computes <code>D_i(MF) = kappa·MF²/(1−MF)</code> from Eq 32 — the same formula the allocator uses, repeated here so the per-step reward signal stays mathematically aligned with the allocation objective. <code>nswf_reward</code> at line 43 builds on that by returning <code>log(productivity − D_i)</code> per step, which means maximising cumulative RL return over an episode is algebraically equivalent to maximising the Nash product of surpluses from Eq 33. <code>safety_cost</code> at line 81 is the constraint side: it returns a non-negative cost whenever any muscle's MF exceeds its <code>theta_max</code>, and this is the number that the Lagrangian multiplier in MAPPO-Lag penalises and that the logger counts as a violation.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>None. These functions import nothing from the codebase — they take floats in and return floats out, which is why they can be tested without constructing any environment or agent.</p></div>
+<div><b>Arrows out</b><p>Both <code>nswf_reward</code> and <code>safety_cost</code> are imported at line 7 of <code>pettingzoo_wrapper.py</code>, and the wrapper calls them inside every <code>step()</code> to produce the reward and cost signals that flow into every agent's rollout buffer.</p></div></div></div>
+
+<!-- 11. task_prof -->
+<div class="boxcard"><h3><span class="tag tag-env">env</span> hcmarl/envs/task_profiles.py <span class="id">task_prof</span></h3>
+<p class="def">Static dictionary of six tasks crossed with six muscle groups, each entry a load multiplier (Def 7.1).</p>
+<div class="work"><p>Pure data, no logic. <code>DEFAULT_PROFILES</code> at line 25 is a 6-task × 6-muscle lookup table, and <code>TaskProfileManager</code> wraps it with a <code>get_demand_vector(task_name)</code> method that returns the per-muscle effort vector for a given task. That effort vector is the target load <code>TL</code> the ODE consumes — it is the bridge between a discrete action ("do task X") and the continuous physics ("push shoulder at 40% MVC, elbow at 20%").</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>None. This is static configuration — it imports nothing and never changes at runtime.</p></div>
+<div><b>Arrows out</b><p>The <code>TaskProfileManager</code> walks into <code>pettingzoo_wrapper.py:17</code>, where the wrapper calls it every step to translate the agent's discrete action (a task id) into the per-muscle demand vector that the ODE integrator in <code>_integrate</code> actually needs.</p></div></div></div>
+
+<!-- 12. logger -->
+<div class="boxcard"><h3><span class="tag tag-infra">infra</span> hcmarl/logger.py <span class="id">logger</span></h3>
+<p class="def">Nine-metric CSV + optional W&amp;B logger. Every method writes the same nine metrics per episode.</p>
+<div class="work"><p>Nine metrics, one CSV, one source of truth. <code>METRIC_NAMES</code> at lines 17–21 lists them: <code>violation_rate</code>, <code>cumulative_cost</code>, <code>safety_rate</code>, <code>tasks_completed</code>, <code>cumulative_reward</code>, <code>jain_fairness</code>, <code>peak_fatigue</code>, <code>forced_rest_rate</code>, <code>constraint_recovery_time</code> — and <code>compute_episode_metrics</code> at line 65 derives every one of them from raw episode data (see Tab 3 for the exact formulas). The CSV lands at <code>logs/training_log.csv</code>, and an optional W&amp;B integration via <code>wandb.init</code> mirrors the same nine numbers to the dashboard. The reason this is its own file rather than a function inside <code>train.py</code> is that evaluation, ablation sweeps, and baseline runs all need the same logger writing in the same format — one definition prevents six implementations from drifting.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>None. This module imports nothing from the codebase — it receives raw episode data as dicts and computes metrics from first principles.</p></div>
+<div><b>Arrows out</b><p>The logger instance flows to both <code>train.py</code> and <code>evaluate.py</code>, where every episode ends with a <code>log_episode(metrics)</code> call. Everything downstream — every notebook, every figure, every table in the eventual paper — reads from the CSV this logger writes, which is why a mistake here propagates to every result.</p></div></div></div>
+
+<!-- 13. networks -->
+<div class="boxcard"><h3><span class="tag tag-agent">agent</span> hcmarl/agents/networks.py <span class="id">networks</span></h3>
+<p class="def">Three small MLPs with orthogonal init: <code>ActorNetwork</code>, <code>CriticNetwork</code>, <code>CostCriticNetwork</code>.</p>
+<div class="work"><p>Three small MLPs, all orthogonally initialised, all deliberately undersized because the bottleneck in this problem is data, not capacity. <code>ActorNetwork</code> at line 16 takes the worker's 19-dimensional local observation through two 64-unit Tanh layers and outputs logits over a Categorical distribution; <code>get_action</code> at line 35 returns the sampled action, its log-probability, and the entropy of the distribution in one call, so the PPO update has everything it needs without a second forward pass. <code>CriticNetwork</code> at line 43 takes the 55-dimensional global state through two 128-unit Tanh layers and produces a scalar <code>V(s)</code>, while <code>CostCriticNetwork</code> at line 59 mirrors that architecture exactly to produce <code>V_c(s)</code> for discounted cost. The output layer of the actor is initialised with gain 0.01 (small initial logits, nearly uniform policy at the start), while hidden layers use gain sqrt(2) — the standard recipe from Andrychowicz et al. (2020) for PPO-style training.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>None. These are leaf definitions — they import only PyTorch and they depend on nothing in the codebase, which is why any agent class can import them without pulling in the rest of the framework.</p></div>
+<div><b>Arrows out</b><p>All three networks flow into <code>mappo.py:14</code>, <code>mappo_lag.py:11</code>, and <code>ippo.py:11</code>. The split is clean: MAPPO instantiates one actor and one value critic, MAPPO-Lag adds the cost critic on top, and IPPO creates per-agent copies of the actor and value critic, each using local observations instead of the global state.</p></div></div></div>
+
+<!-- 14. mappo -->
+<div class="boxcard"><h3><span class="tag tag-agent">agent</span> hcmarl/agents/mappo.py <span class="id">mappo</span></h3>
+<p class="def">Centralised-critic, decentralised-actor PPO (CTDE paradigm) with GAE and a shared rollout buffer.</p>
+<div class="work"><p>Centralised training, decentralised execution — that is the idea, and this file is where it materialises. The <code>RolloutBuffer</code> at line 17 stores per-agent observations, actions, log-probabilities, rewards, and done flags alongside a shared centralised value estimate per timestep, and at update time it flattens everything into <code>(T×N, …)</code> tensors at line 153 so the PPO gradients mix across agents and timesteps simultaneously. <code>compute_returns</code> at line 114 computes generalised advantage estimates per agent (gamma=0.99, lambda=0.95) and interleaves them into the same flat array. The actor loss at line 254 is the standard PPO clipped surrogate — <code>−min(r·A, clip(r, 1±eps)·A).mean() − beta·H.mean()</code> — and the entropy bonus prevents premature collapse to a deterministic policy. The critic loss at line 261 is plain <code>MSE(V(s), GAE_returns)</code>. Both networks are updated under gradient clipping at <code>max_grad_norm=0.5</code>, which keeps the training stable without needing aggressive learning-rate scheduling.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p><code>ActorNetwork</code> and <code>CriticNetwork</code> arrive from <code>networks.py:14</code>. MAPPO instantiates one shared actor and one centralised critic from these classes — the reason it needs the global-obs critic is that decentralised actors trained against only local information cannot coordinate on a cooperative task.</p></div>
+<div><b>Arrows out</b><p>Three consumers depend on this file. First, <code>hcmarl_agent.py:8</code> wraps the <code>MAPPO</code> class as its policy backbone — the integrated HC-MARL agent is MAPPO plus ECBF plus NSWF, not a replacement for MAPPO. Second, <code>ippo.py:12</code> imports <code>RolloutBuffer</code> directly to avoid duplicating the GAE computation. Third, <code>train.py:26</code> imports <code>MAPPO</code> as one of the seven methods its factory can return.</p></div></div></div>
+
+<!-- 15. ippo -->
+<div class="boxcard"><h3><span class="tag tag-agent">agent</span> hcmarl/agents/ippo.py <span class="id">ippo</span></h3>
+<p class="def">Independent PPO: each worker trains its own actor-critic with no centralised information. Deliberately weak baseline.</p>
+<div class="work"><p>IPPO is the deliberately weak baseline — every worker trains in a silo, sees only its own observation, and has no idea what the other workers are doing. Lines 31–32 instantiate <code>n_agents</code> separate copies of both <code>ActorNetwork</code> and <code>CriticNetwork</code>, and each critic uses <code>obs_dim</code> (local) rather than <code>global_obs_dim</code>, so coordination can only emerge through the shared environment dynamics, never through the value function. The actor loss at line 87 is the same PPO clipped surrogate as MAPPO, just with a per-agent local value baseline, and the critic loss at line 95 is per-agent <code>MSE(V_i(o_i), returns_i)</code>. The file reuses <code>RolloutBuffer</code> from <code>mappo.py:12</code> — one buffer per agent — to avoid duplicating the GAE logic.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p><code>ActorNetwork</code> and <code>CriticNetwork</code> from <code>networks.py:11</code>, each cloned per agent, and <code>RolloutBuffer</code> from <code>mappo.py:12</code>, reused to keep the GAE computation in one place.</p></div>
+<div><b>Arrows out</b><p><code>IPPO</code> flows to <code>train.py</code> as one of the seven factory options. The reason it exists in the comparison is simple: if a learned method cannot outperform independent agents who share nothing, the coordination mechanism is not earning its keep.</p></div></div></div>
+
+<!-- 16. mappo_lag -->
+<div class="boxcard"><h3><span class="tag tag-agent">agent</span> hcmarl/agents/mappo_lag.py <span class="id">mappo_lag</span></h3>
+<p class="def">Lagrangian MAPPO: same actor + two critics (value and cost) + a learnable multiplier lambda that pushes cost below a budget.</p>
+<div class="work"><p>This is MAPPO with a safety budget. Everything from the base MAPPO class is here — shared actor, centralised critic, PPO clipped surrogate — but the actor loss at line 237 picks up an additional term: <code>lambda · max(cost_surr1, cost_surr2).mean()</code>. The <code>max</code> (rather than <code>min</code>) means the cost penalty is conservatively clipped — under ratio truncation the policy errs on the side of safety, not reward. That <code>lambda</code> is itself a learnable quantity: <code>log_lambda</code> is an <code>nn.Parameter</code> at line 169 with its own Adam optimiser at line 176, updated at line 270 via the dual gradient <code>−exp(log_lambda)·(mean_cost − cost_limit)</code>. When the average cost overshoots the budget (default <code>cost_limit=0.1</code>), lambda rises and pushes the policy harder toward safety; when the constraint is satisfied, lambda decays and lets the policy chase reward again. Alongside the actor, the reward critic at line 246 (<code>MSE(V(s), reward_returns)</code>) and the cost critic at line 254 (<code>MSE(V_c(s), cost_returns)</code>) train in parallel — the cost critic is what gives the actor a gradient signal about <em>future</em> cost, not just the cost it has already incurred.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>All three network classes — <code>ActorNetwork</code>, <code>CriticNetwork</code>, <code>CostCriticNetwork</code> — arrive from <code>networks.py:11</code>. This is the only agent in the codebase that needs all three, because it is the only one that tracks both reward returns and cost returns separately.</p></div>
+<div><b>Arrows out</b><p><code>MAPPOLagrangian</code> flows in two directions. First, <code>safepo_wrapper.py:12</code> imports it directly so that SafePO's comparison runs use the exact same Lagrangian numerics as the in-house implementation — keeping the comparison on equal numerical footing. Second, <code>train.py</code> imports it as one of the seven factory options.</p></div></div></div>
+
+<!-- 17. hcmarl_agent -->
+<div class="boxcard"><h3><span class="tag tag-agent">agent</span> hcmarl/agents/hcmarl_agent.py <span class="id">hcmarl_agent</span></h3>
+<p class="def">The integrated method: MAPPO backbone + ECBF safety projection + NSWF reward + per-worker theta_max from MMICRL.</p>
+<div class="work"><p>This is the only file where all four ideas meet in one constructor: MAPPO as the policy backbone, ECBF parameters for safety, NSWF as the reward structure, and the MMICRL-derived per-worker <code>theta_max</code> dictionary that personalises the safety ceiling. The constructor at line 12 accepts <code>(obs_dim, global_obs_dim, n_actions, n_agents, theta_max=None, ecbf_params=None, use_nswf=True, device='cpu')</code> and wraps a <code>MAPPO</code> instance internally at line 14 — it composes MAPPO rather than reimplementing it, so the actor, critic, buffer, and update logic are all inherited without duplication. The key architectural decision is that the agent <em>proposes</em> actions through <code>get_actions</code> at line 23, which delegates straight to <code>self.mappo.get_actions()</code>, but the actual safety filtering happens inside the environment's <code>_integrate</code> method, not here. The agent never clips itself — the environment does that, so the RL gradient remains clean and the safety guarantee lives in the physics layer rather than the policy layer.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p><code>MAPPO</code> arrives from <code>mappo.py:8</code>, and it arrives as a composed member, not a parent class — every piece of the policy, buffer, and update mechanism comes from that single import.</p></div>
+<div><b>Arrows out</b><p><code>HCMARLAgent</code> flows to <code>train.py</code> as the primary method in the factory. It is the method the framework is built to test — every other method in the comparison exists to measure what happens when you take away one or more of its four components.</p></div></div></div>
+
+<!-- 18. legacy -->
+<div class="boxcard"><h3><span class="tag tag-agent">agent</span> hcmarl/baselines/_legacy.py <span class="id">legacy</span></h3>
+<p class="def">Ten classical baselines (random, round-robin, greedy, greedy-safe, PPO-unconstrained, PPO-Lagrangian, MAPPO-NoFilter, MAPPO-Lagrangian, MACPO, fixed-schedule) in one file.</p>
+<div class="work"><p>Ten classical baselines in one file, defined at lines 28, 44, 64, 79, 110, 145, 196, 224, 236, and 275: Random, Round-Robin, Greedy, Greedy-Safe, PPO-Unconstrained, PPO-Lagrangian, MAPPO-NoFilter, MAPPO-Lagrangian, MACPO, and Fixed-Schedule. Every one of them exposes the same <code>get_actions(observations, **kwargs) → Dict[str, int]</code> signature, so the trainer handles them exactly like any other agent — no special-case code, no branching. These are sanity checks: if a learned method cannot beat round-robin on a task that requires coordination, the learning is not working and I need to find out why before wasting GPU hours on the full sweep.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>None. These baselines are fully self-contained — they import nothing from the rest of the codebase and depend on no learned parameters.</p></div>
+<div><b>Arrows out</b><p>All ten classes flow to <code>train.py</code> through the legacy factory branch, where the single trainer handles them identically to the learned methods.</p></div></div></div>
+
+<!-- 19. omnisafe_w -->
+<div class="boxcard"><h3><span class="tag tag-agent">agent</span> hcmarl/baselines/omnisafe_wrapper.py <span class="id">omnisafe_w</span></h3>
+<p class="def">Adapter that lets OmniSafe's CPO and PPO-Lag masquerade as an HC-MARL agent.</p>
+<div class="work"><p>This adapter lets OmniSafe's CPO and PPO-Lag implementations masquerade as an HC-MARL agent without the trainer knowing the difference. In stub mode (lines 65–76), it returns dummy <code>log_probs</code> and zero values so the rollout buffer's shape assertions do not crash; in real mode, it forwards observations to the OmniSafe policy and unpacks the returned actions back into the dict-of-dicts shape the trainer expects. The reason this exists is that comparing against my own implementations alone is insufficient — I need to show that the framework holds up against the field's established constrained RL methods, on the same environment, the same seeds, the same logger.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>None. This is a wrapper around an external library — it imports from OmniSafe, not from the codebase.</p></div>
+<div><b>Arrows out</b><p>Flows to <code>train.py:104</code> as the CPO / PPO-Lag factory branch.</p></div></div></div>
+
+<!-- 20. safepo_w -->
+<div class="boxcard"><h3><span class="tag tag-agent">agent</span> hcmarl/baselines/safepo_wrapper.py <span class="id">safepo_w</span></h3>
+<p class="def">Adapter for SafePO's MACPO, re-using the in-house <code>MAPPOLagrangian</code> to keep numerics aligned.</p>
+<div class="work"><p>Same stub/real pattern as the OmniSafe wrapper, but with one important twist: it imports <code>MAPPOLagrangian</code> from the in-house <code>mappo_lag.py:12</code> rather than using SafePO's own Lagrangian implementation. That deliberate choice ensures the MACPO comparison uses the exact same dual-variable update, cost-clipping direction, and optimiser configuration as the in-house Lagrangian baseline, so any performance difference between the two can be attributed to the algorithm, not to implementation drift.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p><code>MAPPOLagrangian</code> from <code>mappo_lag.py:12</code>. This box reuses the in-house Lagrangian to keep the numerics aligned across comparisons.</p></div>
+<div><b>Arrows out</b><p>Flows to <code>train.py:106</code> as the MACPO factory branch.</p></div></div></div>
+
+<!-- 21. train -->
+<div class="boxcard"><h3><span class="tag tag-script">script</span> scripts/train.py <span class="id">train</span></h3>
+<p class="def">Single training entry point for all seven methods. Loads config, builds env + agent, runs the training loop, checkpoints, logs.</p>
+<div class="work"><p>One file, one factory, seven methods — and the reason it is one file is that every alternative (per-method trainers, inheritance hierarchies, registry decorators) drifts within a month. Lines 25–32 import every entity the trainer needs: <code>WarehousePettingZoo</code>, the four in-house agents (<code>MAPPO</code>, <code>IPPO</code>, <code>MAPPOLagrangian</code>, <code>HCMARLAgent</code>), the two external wrappers (<code>OmniSafeWrapper</code>, <code>SafePOWrapper</code>), and <code>HCMARLLogger</code>. The <code>create_agent</code> factory at lines 50/64–108 takes a string method name, matches it against the seven registered methods, and returns the corresponding agent — no reflection, no dynamic loading, just a clean <code>if/elif</code> chain. Seeds are set at lines 187–188 via <code>torch.manual_seed(seed)</code> and <code>np.random.seed(seed)</code> with no wrapper function, because simplicity here is worth more than elegance. If the <code>--mmicrl</code> flag is set, <code>run_mmicrl_pretrain</code> at line 115 lazy-imports <code>DemonstrationCollector</code> and <code>MMICRL</code> from <code>mmicrl.py</code> and runs the EM type-discovery before the main training loop begins. The training loop itself at line 183 is the standard cycle: collect rollouts, call <code>agent.update()</code>, log, checkpoint, repeat.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>Everything converges here. <code>WarehousePettingZoo</code> from <code>pettingzoo_wrapper.py</code> creates the environment. All seven agent classes from <code>agents/</code> and <code>baselines/</code> are imported so the factory can pick one. <code>HCMARLLogger</code> from <code>logger.py</code> writes the nine metrics per episode. Config dicts from <code>config/*.yaml</code> via <code>load_yaml</code> hydrate every hyperparameter that is not hard-coded.</p></div>
+<div><b>Arrows out</b><p>Per-method CSV rows flow to <code>logs/</code> through the logger, and trained model weights flow to <code>checkpoints/</code> through the checkpointing logic. Everything downstream — evaluation, notebooks, figures, tables — reads from these two directories.</p></div></div></div>
+
+<!-- 22. evaluate -->
+<div class="boxcard"><h3><span class="tag tag-script">script</span> scripts/evaluate.py <span class="id">evaluate</span></h3>
+<p class="def">Loads checkpoints, runs deterministic rollouts, writes the same nine metrics to disk for plotting.</p>
+<div class="work"><p>The simplest way to guarantee the evaluation graph never lags behind the training graph is to reuse the training graph. That is exactly what this file does: it imports <code>create_agent</code> from <code>scripts/train.py</code> at line 22, builds the same agent from the same factory with the same config, loads a checkpoint, and runs deterministic rollouts by taking the argmax action instead of sampling from the distribution. The logger writes the same nine metrics to the same CSV format, so evaluation results and training results are directly comparable without any schema translation.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p><code>WarehousePettingZoo</code> from <code>pettingzoo_wrapper.py</code>, <code>HCMARLLogger</code> from <code>logger.py</code>, and <code>create_agent</code> from <code>train.py</code>. Reusing <code>create_agent</code> is the single design decision that makes it impossible for evaluation to drift from training — one source of truth for what each method actually is.</p></div>
+<div><b>Arrows out</b><p>Evaluation CSV rows flow to <code>logs/</code>, where they sit alongside the training logs and are consumed by the same notebooks and plotting scripts.</p></div></div></div>
+
+<!-- 23. run_abl -->
+<div class="boxcard"><h3><span class="tag tag-script">script</span> scripts/run_ablations.py <span class="id">run_abl</span></h3>
+<p class="def">Sweeps four ablation knobs (no-ECBF, no-NSWF, no-MMICRL, no-Lagrangian) and dispatches one <code>train.py</code> per cell.</p>
+<div class="work"><p>Four ablation knobs — no-ECBF, no-NSWF, no-MMICRL, no-Lagrangian — crossed into a config matrix, and for each cell the script shells out to <code>train.py</code> with the appropriate flags. The results land in <code>logs/</code> alongside the full-method runs, so the comparison between "with ECBF" and "without ECBF" is literally two rows in the same CSV differing by one column. The point of this script is to make the ablation table in the paper a one-command operation rather than a manual checklist.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p><code>train.py</code> via subprocess calls — this script does not import the training logic, it invokes it.</p></div>
+<div><b>Arrows out</b><p>Ablation CSV rows to <code>logs/</code>.</p></div></div></div>
+
+<!-- 24. run_base -->
+<div class="boxcard"><h3><span class="tag tag-script">script</span> scripts/run_baselines.py <span class="id">run_base</span></h3>
+<p class="def">Launches every baseline with the same seed budget for honest comparison.</p>
+<div class="work"><p>Same pattern as the ablation runner — a config matrix, a subprocess call to <code>train.py</code> for each cell — but the sweep is over all ten classical baselines rather than ablation knobs. Every baseline runs with the same seed budget as the learned methods, so the comparison is fair: identical episodes, identical logger, identical random number streams.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p><code>train.py</code> via subprocess calls.</p></div>
+<div><b>Arrows out</b><p>Baseline CSV rows to <code>logs/</code>.</p></div></div></div>
+
+<!-- 25. run_scale -->
+<div class="boxcard"><h3><span class="tag tag-script">script</span> scripts/run_scaling.py <span class="id">run_scale</span></h3>
+<p class="def">Sweeps worker counts (3, 5, 10, 20) to measure how the centralised critic scales.</p>
+<div class="work"><p>Sweeps worker counts across 3, 5, 10, and 20 to measure how the centralised critic scales. The global observation dimension grows as <code>n_workers × 18 + 1</code>, so at 20 workers the critic input is 361 dimensions — this experiment is designed to expose whether the 128-unit hidden layers are a bottleneck, and if so, at what team size the coordination benefit of centralisation stops outweighing the cost of a higher-dimensional input.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p><code>train.py</code> via subprocess calls.</p></div>
+<div><b>Arrows out</b><p>Scaling CSV rows to <code>logs/</code>.</p></div></div></div>
+
+<!-- 26. configs -->
+<div class="boxcard"><h3><span class="tag tag-infra">infra</span> config/*.yaml <span class="id">configs</span></h3>
+<p class="def">YAML configuration files: hyperparameters, environment settings, calibrated muscle parameters, run names.</p>
+<div class="work"><p>The rule is simple: no magic number lives inside Python source if it can be moved to YAML. These files hold every hyperparameter, environment setting, and calibrated muscle parameter the framework uses. <code>dry_run_50k.yaml</code> is the verification config used for smoke-testing all seven methods; the full-budget configs will run at 5M+ steps per method per seed. The calibrated <code>(F, R, r)</code> tuples from Path G in <code>real_data_calibration.py</code> are baked directly into these files, so at training time the environment boots with real-data-grounded dynamics by default — no manual copy-paste, no chance of a stale number silently persisting.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>Calibrated parameters from <code>real_data_calibration.py</code> — Path G's output is encoded here so the simulator uses measured human dynamics rather than textbook averages.</p></div>
+<div><b>Arrows out</b><p>Config dicts flow to <code>train.py</code>, <code>evaluate.py</code>, and every experiment launcher via <code>load_yaml</code>. Change a number in one YAML file and every run that reads that config picks it up automatically.</p></div></div></div>
+
+<!-- 27. notebooks -->
+<div class="boxcard"><h3><span class="tag tag-infra">infra</span> notebooks/*.ipynb <span class="id">notebooks</span></h3>
+<p class="def">Jupyter notebooks for evaluation, plotting, and the demo figures.</p>
+<div class="work"><p>Strictly read-only with respect to model state — no notebook is allowed to retrain, modify a checkpoint, or overwrite a log. They consume CSVs from <code>logs/</code>, produce PNG figures in <code>figures/</code>, and that is their entire scope. The separation is enforced by convention, not by access control, but the convention matters: if a notebook ever trained a model, the figures it produced would not be reproducible from the committed training pipeline, and the results section of the paper would be built on sand.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>CSV rows from <code>logs/</code>, written by the logger during training and evaluation.</p></div>
+<div><b>Arrows out</b><p>PNG figures to <code>figures/</code>, consumed by the paper and the presentation.</p></div></div></div>
+
+<!-- 28. tests -->
+<div class="boxcard"><h3><span class="tag tag-infra">infra</span> tests/* <span class="id">tests</span></h3>
+<p class="def">223 pytest tests pinning every public symbol to a known shape and a known value.</p>
+<div class="work"><p>223 tests, all passing, zero failures — that is the invariant, and it is checked before every commit. Coverage spans the full stack: ODE mass conservation, ECBF QP feasibility on edge-case muscle states, NSWF allocation correctness against hand-worked examples, PettingZoo reset/step contract compliance, end-to-end pipeline trajectories with safety-set assertions, MMICRL EM convergence behaviour, and agent update tensor shapes. The purpose is not to achieve a high coverage percentage but to pin every public symbol to a known value, so that a regression in any module surfaces as a red test rather than a silent drift discovered three weeks later.</p></div>
+<div class="arrows"><div><b>Arrows in</b><p>Imports from every module in the codebase. The test suite is the only place where the entire dependency graph is exercised simultaneously.</p></div>
+<div><b>Arrows out</b><p>None. Tests are a terminal consumer — they read everything and produce nothing but a pass/fail verdict.</p></div></div></div>
+
+</section>
+
+<!-- ===== TAB 2 — HOW IT WORKS ===== -->
+<section class="tab" id="tab2">
+<h2 class="section">How It Works</h2>
+<p class="lede">Two columns. Left: a micro-level walkthrough of all 85 data-flow steps from the slideshow, grouped into ten phases, with file:line references and the actual variables that flow. Right: a sticky semantic essay that stays visible while you scroll, explaining why the phase exists and what breaks without it. Both written as flowing prose — read them like one essay folded in half.</p>
+
+<div style="margin-bottom:24px">
+<h3 style="font-size:16px;font-weight:600;margin:0 0 12px">Datasets used in this framework</h3>
+<div class="dsbox"><h4>WSD4FEDSRM (Wearable Sensor Data for Fatigue Estimation During Shoulder Rotation Movements)</h4>
+<p><b>Source:</b> Zenodo 8415066, Nature Scientific Data 2024.</p>
+<p><b>Participants:</b> 34 healthy volunteers (23 male, 11 female, ages 20–35).</p>
+<p><b>Protocol:</b> Dynamic shoulder internal and external rotation at 30–40%, 40–50%, and 50–60% of MVIC force until maximal Borg RPE (20).</p>
+<p><b>Modalities:</b> Surface EMG (6 muscles, 1000 Hz), IMU (6 body locations, 100 Hz), PPG (200 Hz), Borg RPE (10-second intervals), KSS (pre/post), demographic and anthropometric measurements.</p>
+<p><b>Location in repo:</b> <code>data/wsd4fedsrm/WSD4FEDSRM/</code></p>
+<p><b>How I use it:</b> Path G (<code>real_data_calibration.py</code>) reads each subject's endurance time at their %MVIC load, then grid-searches <code>(F, R)</code> to minimise <code>|ET_observed - ET_predicted|</code> using the 3CC-r ODE. The calibrated parameters anchor the simulator to real human fatigue dynamics.</p>
+</div>
+<div class="dsbox"><h4>Frey-Law &amp; Avin (2010) — Meta-analysis endurance curves</h4>
+<p><b>Source:</b> Published meta-analysis of 194 publications.</p>
+<p><b>What it provides:</b> Population-mean <code>(F, R)</code> per muscle group for isometric sustained contractions (Table 1 of the math doc). <code>POPULATION_FR</code> dict at <code>real_data_calibration.py:473</code>.</p>
+<p><b>How I use it:</b> For non-shoulder muscles (ankle, knee, elbow, trunk, grip), per-subject endurance data is unavailable. I use the published population means as the baseline, then sample correlated individual variation using published CVs.</p>
+</div>
+</div>
+
+<div class="fusion">
+<div class="micro">
+
+<div class="phase"><h4>Phase 1 — Foundation (steps 1–6)</h4>
+<div class="lbl">utils.py, three_cc_r.py</div>
+<p>I start from the smallest possible surface: a set of stateless helpers and the physiological model they support. The first two steps live in <code>utils.py</code> — <code>clip_and_normalise</code> at line 96 clamps an array to <code>[0,1]</code> and rescales it to sum to one, which is how I enforce the mass conservation law <code>MR + MA + MF = 1</code> (Theorem 3.2) after every ODE tick, and <code>safe_log</code> at line 115 computes <code>log(max(x, 1e-20))</code> so the NSWF surplus computation never hits <code>log(0)</code>. Those two primitives are all the downstream math needs from this file.</p>
+<p>The next four steps build the physiology itself inside <code>three_cc_r.py</code>. Step 3 defines the <code>MuscleParams</code> frozen dataclass at line 28, which stores the three calibrated rate constants — <code>F</code> (fatigue), <code>R</code> (recovery), <code>r</code> (reperfusion multiplier) — and derives the quantities the rest of the codebase actually uses: <code>C_max = F·R/(F+R)</code> and <code>delta_max = R/(F+R)</code> from Eq 6, and the safety threshold <code>theta_min_max = F/(F+R·r)</code> from Eq 25. Step 4 instantiates six calibrated muscle groups at lines 79–84 — <code>SHOULDER(F=0.0146, R=0.00058, r=15)</code>, <code>ANKLE</code>, <code>KNEE</code>, <code>ELBOW</code>, <code>TRUNK</code>, and <code>GRIP(r=30)</code> — all isometric population means from Frey-Law, Looft &amp; Heitsman (2012) Table 2. Step 5 wraps them in a <code>get_muscle(name)</code> lookup at line 91 that the PettingZoo wrapper calls at construction for each of its six muscles. Step 6 is the integrator itself: three lines of physics — <code>dMA/dt = C − F·MA</code>, <code>dMF/dt = F·MA − R_eff·MF</code>, <code>dMR/dt = R_eff·MF − C</code> — switched by Eq 5 so <code>R_eff = R·r</code> during rest and <code>R_eff = R</code> during work.</p>
+</div>
+
+<div class="phase"><h4>Phase 2 — Core math (steps 7–18)</h4>
+<div class="lbl">ecbf_filter.py, nswf_allocator.py</div>
+<p>With muscles defined, I build the two constraint mechanisms that separate this framework from standard MARL. Steps 7–12 live in <code>ecbf_filter.py</code>. Step 7 imports <code>MuscleParams</code> and <code>ThreeCCrState</code> from <code>three_cc_r</code> at line 26, because the QP coefficients are functions of <code>(F, R, r)</code> and the current muscle state. Step 8 defines <code>ECBFParams</code> at line 30 with its four design knobs: <code>theta_max</code>, <code>alpha1=0.05</code>, <code>alpha2=0.05</code>, <code>alpha3=0.1</code>. Step 9 constructs the QP objective at line 270 — <code>cp.Minimize(cp.sum_squares(C_var − C_nominal))</code> — which says "find the closest safe control to whatever the policy proposed." Step 10 adds the ECBF enforcement constraint from Eq 18 at line 291: <code>−F·C + F²·MA + R_eff·F·MA − R_eff²·MF + α₁·h_dot + α₂·ψ₁ ≥ 0</code>. Step 11 adds the resting-floor CBF from Eq 23 at line 300: <code>C ≤ R_eff·MF + α₃·MR</code>. Step 12 adds the non-negativity constraint <code>C ≥ 0</code> at line 304. Together, those three constraints define the safe set that the QP projects onto at every timestep.</p>
+<p>Steps 13–18 build the fairness layer inside <code>nswf_allocator.py</code>. Step 13 imports <code>safe_log</code> from <code>utils</code> at line 26 — needed because the objective takes the log of a quantity that can reach zero. Step 14 defines <code>NSWFParams</code> at line 34 with <code>kappa=1.0</code> and <code>epsilon=1e-3</code>. Step 15 implements the disagreement utility from Eq 32 at line ~100: <code>D_i(MF) = kappa·MF²/(1−MF)</code>, the fatigue-dependent reservation value that diverges as a worker approaches exhaustion. Step 16 defines rest utility at line 143 as <code>U(i,0) = D_i + epsilon</code> from Eq 31, which guarantees that resting always yields a surplus of exactly <code>epsilon > 0</code> — small but strictly positive, so rest is never individually irrational. Step 17 evaluates the objective at lines 255–266: <code>sum_i safe_log(S_ij)</code> over the assignment from Eq 33. Step 18 packages everything into an <code>AllocationResult</code> at line 302 carrying the assignment, the achieved objective value, the per-worker surpluses, and the disagreement utilities.</p>
+</div>
+
+<div class="phase"><h4>Phase 3 — Pipeline integration (steps 19–26)</h4>
+<div class="lbl">pipeline.py</div>
+<p>The four core modules are stitched into one closed loop, and that stitching is the backbone of the entire framework. Steps 19–22 are the import declarations: step 19 pulls <code>ECBFFilter</code> and <code>ECBFParams</code> from <code>ecbf_filter.py</code> at line 24, step 20 pulls <code>AllocationResult</code>, <code>NSWFAllocator</code>, and <code>NSWFParams</code> from <code>nswf_allocator.py</code> at line 25, step 21 pulls <code>MUSCLE_REGISTRY</code>, <code>MuscleParams</code>, <code>ThreeCCr</code>, <code>ThreeCCrState</code>, and <code>get_muscle</code> from <code>three_cc_r.py</code> at lines 26–32, and step 22 pulls <code>load_yaml</code> and <code>get_logger</code> from <code>utils.py</code> at line 33. Those four import blocks are the entire dependency set of the pipeline — nothing else enters.</p>
+<p>Step 23 defines <code>TaskProfile</code> at line 43 (Def 7.1), which maps each task to a per-muscle target-load vector <code>TL_g</code>. Steps 24–26 are the seven-step loop itself from Section 7.3, running in the exact order the math doc specifies: (1) observe each worker's state <code>x_i(t) = [MR, MA, MF]</code>, (2) hand the state matrix to the NSWF allocator which picks a task per worker using Eq 33, (3) translate each picked task into a per-muscle target load via <code>TaskProfile</code>, (4) compute the nominal neural drive using the proportional controller from Eq 35 (or the RL policy during training), (5) project that drive through the ECBF QP from Eq 20 to get <code>C_safe</code>, (6) integrate the 3CC-r ODE one tick under <code>C_safe</code> using Eqs 2–4, and (7) log everything. No training happens in this file — that is the separation that makes debugging tractable.</p>
+</div>
+
+<div class="phase"><h4>Phase 4 — MMICRL and real data (steps 27–36)</h4>
+<div class="lbl">mmicrl.py, real_data_calibration.py — uses WSD4FEDSRM dataset</div>
+<p>This is the legitimacy phase. The muscle parameters I defined in Phase 1 are isometric population means — they need to be grounded in real measured data. And workers are not interchangeable — they need latent types. Steps 27–35 build the type-discovery system inside <code>mmicrl.py</code>.</p>
+<p>Step 27 constructs the CFDE normalising flow at line 220 — a stack of <code>n_blocks</code> MADE layers, each followed by batch norm and a reversal permutation, conditioned on a one-hot type vector <code>z</code>. Step 28 adds a learnable type prior at line 252: <code>log_prior = nn.Parameter(zeros(n_types))</code>, passed through softmax to give <code>p(z)</code>. Step 29 wires <code>log_prob(x, z_onehot)</code> at line 254, which runs a forward pass through the flow and returns <code>log p(x|z)</code> for per-step features <code>x = (state, action)</code>. Step 30 computes the Bayesian posterior at line 272: <code>p(z|x) = softmax(log p(x|z) + log p(z))</code>. Step 31 lifts that to the trajectory level at line 288 — <code>log p(z|tau) = log p(z) + mean_{(s,a) in tau} log p(s,a|z)</code> — using a mean (not a sum) over timesteps so trajectory length does not drive mode collapse. Step 32 is the EM loop at line 332: the E-step assigns trajectories to types via <code>argmax</code> at line 328, and the M-step maximises <code>log p(x|z)</code> at line 369 with <code>loss = −log_p.mean()</code>. Step 33 defines the <code>ConstraintNetwork</code> at line 468 — a small MLP trained with BCE at line 514 on expert-vs-agent labels — which sweeps MF values to find the <code>theta_max</code> per muscle where the constraint cost crosses 0.5. Step 34 defines the <code>DemonstrationCollector</code> at line 549, which records <code>(obs[agent].copy(), action)</code> per step per agent from rollouts. Step 35 is the outer MMICRL objective at line 1070 (Eq 10): <code>lambda2·MI + (lambda1−lambda2)·H_marginal</code>, which collapses to pure mutual information when the two lambdas are equal.</p>
+<p>Steps 36–40 ground the simulator in real data inside <code>real_data_calibration.py</code>. Step 36 imports <code>MuscleParams</code>, <code>ThreeCCr</code>, and <code>SHOULDER</code> from <code>three_cc_r</code> at line 37. Step 37 defines <code>predict_endurance_time</code> at line 44, which simulates the 3CC-r ODE with the proportional controller (Eq 35) at a given %MVC until <code>MR &lt; 1e-4</code>. Step 38 runs a grid search over <code>(F, R)</code> and picks the pair that minimises <code>|ET_observed − ET_predicted|</code> against the WSD4FEDSRM dataset's 34 subjects' measured endurance times. Step 39 stores population means for non-shoulder muscles in the <code>POPULATION_FR</code> dict at line 473, taken from Frey-Law et al. (2012) Table 2. Step 40 lazy-imports <code>DemonstrationCollector</code> from <code>mmicrl</code> at line 962, converting calibrated physiological profiles into demonstrations so that the type-discovery pipeline runs on real-data-grounded trajectories.</p>
+</div>
+
+<div class="phase"><h4>Phase 5 — Environment (steps 41–54)</h4>
+<div class="lbl">warehouse_env.py, pettingzoo_wrapper.py, reward_functions.py, task_profiles.py</div>
+<p>The environment is the contract that every method agrees to. If the observation shape, the reward function, or the action space drifted between methods, the comparison would be meaningless. Step 41 defines the atomic unit — <code>SingleWorkerWarehouseEnv</code> in <code>warehouse_env.py</code>, with action space <code>Discrete(4)</code>, one 3CC-r body, one task. Step 42 wraps N of those into <code>WarehousePettingZoo(n_workers, …)</code> at line 10 of <code>pettingzoo_wrapper.py</code>. Steps 43–44 lock down the observation dimensions at lines 60–61: <code>obs_dim = n_muscles×3 + 1 = 19</code> per worker and <code>global_obs_dim = n_workers×n_muscles×3 + 1 = 55</code> for the centralised critic (3 workers, 6 muscles), with <code>possible_agents = ['worker_0', 'worker_1', 'worker_2']</code> at line 58.</p>
+<p>Step 45 brings in the reward and cost signals: <code>nswf_reward</code> and <code>safety_cost</code> from <code>reward_functions.py</code> at line 7, called inside every <code>step()</code>. Step 46 imports <code>get_muscle</code> from <code>three_cc_r</code> at line 32 and builds the <code>self.muscle_params</code> dictionary at line 33. Step 47 imports the <code>TaskProfileManager</code> from <code>task_profiles</code> at line 17, which translates each discrete task id into the per-muscle demand vector the ODE consumes. Step 48 accepts the per-worker, per-muscle <code>theta_max</code> dictionary from MMICRL at lines 41–54, merging it with defaults for any muscles or workers not covered. Step 49 implements the core integration step in <code>_integrate</code> at line 86, which runs the 3CC-r ODE with inline ECBF analytical clipping that matches the standalone filter's coefficients, tracking both the intervention count and clip magnitude. Step 50 implements <code>step(actions)</code> at line 140, returning the standard PettingZoo dict-of-dicts: <code>(obs, rewards, terminations, truncations, infos)</code>.</p>
+<p>Steps 51–54 define the reward and task data. Step 51 implements <code>disagreement_utility</code> at <code>reward_functions.py:33</code> as <code>kappa·MF²/(1−MF)</code> from Eq 32. Step 52 implements <code>nswf_reward</code> at line 43 as <code>log(productivity − D_i)</code> from Eq 33, aligning the RL return with the Nash product of surpluses. Step 53 implements <code>safety_cost</code> at line 81, returning a non-negative cost whenever <code>MF > theta_max</code>. Step 54 stores the <code>DEFAULT_PROFILES</code> at <code>task_profiles.py:25</code> — a 6-task × 6-muscle load table.</p>
+</div>
+
+<div class="phase"><h4>Phase 6 — Networks and agents (steps 55–69)</h4>
+<div class="lbl">networks.py, mappo.py, ippo.py, mappo_lag.py, hcmarl_agent.py</div>
+<p>The RL machinery. Small networks, because the bottleneck is data, not model capacity. Steps 55–57 define the three MLPs in <code>networks.py</code>. Step 55 builds the <code>ActorNetwork</code> at line 16 — <code>Linear(19,64) → Tanh → Linear(64,64) → Tanh → Linear(64,6)</code> — outputting Categorical logits with orthogonal init and an output gain of 0.01 so the initial policy is nearly uniform. Step 56 builds the <code>CriticNetwork</code> at line 43 — <code>Linear(55,128) → Tanh → Linear(128,128) → Tanh → Linear(128,1)</code> — outputting a scalar <code>V(s)</code>. Step 57 mirrors that architecture in the <code>CostCriticNetwork</code> at line 59, outputting <code>V_c(s)</code> for discounted cost.</p>
+<p>Steps 58–62 build the MAPPO agent in <code>mappo.py</code>. Step 58 defines the <code>RolloutBuffer</code> at line 17, which stores per-agent experience and flattens it to <code>(T×N, …)</code> tensors for the PPO update. Step 59 implements <code>compute_returns</code> at line 114 with per-agent GAE (gamma=0.99, lambda=0.95), then interleaves into a flat array. Step 60 is the <code>MAPPO</code> constructor at line 208: one shared actor, one centralised critic, two Adam optimisers. Step 61 is the actor loss at line 254: <code>−min(r·A, clip(r)·A) − beta·H</code>. Step 62 is the critic loss at line 261: <code>MSE(V(s), GAE_returns)</code>.</p>
+<p>Steps 63–64 build IPPO in <code>ippo.py</code>. Step 63 creates per-agent copies of the actor and critic at lines 31–32, each critic using <code>obs_dim</code> (local) not <code>global_obs_dim</code>. Step 64 trains each with the same PPO clipped surrogate at line 87, but against a local value baseline.</p>
+<p>Steps 65–68 build the Lagrangian variant in <code>mappo_lag.py</code>. Step 65 defines the actor loss at line 237: <code>reward_loss + lambda·max(cost_surr) − beta·H</code>. Step 66 is the value critic MSE at line 246. Step 67 is the cost critic MSE at line 254. Step 68 is the lambda dual update at line 270: <code>−exp(log_lambda)·(mean_cost − cost_limit)</code>, which drives the multiplier up when safety is being violated and lets it decay when the budget is satisfied.</p>
+<p>Step 69 wraps everything into the integrated <code>HCMARLAgent</code> at <code>hcmarl_agent.py:14</code>, which composes <code>MAPPO</code> as its backbone, stores the per-worker <code>theta_max</code> and ECBF params, and delegates action selection to the policy while letting the environment apply the ECBF filter inside <code>_integrate</code>.</p>
+</div>
+
+<div class="phase"><h4>Phase 7 — Baselines (steps 70–72)</h4>
+<div class="lbl">_legacy.py, omnisafe_wrapper.py, safepo_wrapper.py</div>
+<p>Every comparison method goes through one common interface — no exceptions, no special-cases in the trainer. Step 70 defines all ten classical baselines in <code>_legacy.py</code> at lines 28, 44, 64, 79, 110, 145, 196, 224, 236, and 275, each exposing the same <code>get_actions(observations) → Dict[str, int]</code> signature so the trainer treats them identically to learned agents. Step 71 wraps OmniSafe's CPO and PPO-Lag behind an adapter in <code>omnisafe_wrapper.py</code> — the stub at lines 65–76 returns dummy log-probs to keep the buffer shape-checks happy, while the real path forwards observations to OmniSafe's policy and unpacks the result. Step 72 does the same for SafePO in <code>safepo_wrapper.py</code>, with the twist that it imports <code>MAPPOLagrangian</code> from <code>mappo_lag.py:12</code> to keep the Lagrangian numerics identical across comparisons.</p>
+</div>
+
+<div class="phase"><h4>Phase 8 — Training scripts (steps 73–79)</h4>
+<div class="lbl">train.py, logger.py</div>
+<p>One file, one factory, seven methods — and the reason there is one <code>train.py</code> is that every alternative (per-method scripts, inheritance hierarchies) drifts within a month. Step 73 is the import block at lines 25–32, pulling in <code>WarehousePettingZoo</code> and every agent class. Step 74 registers the seven methods in the <code>METHODS</code> dict at lines 39–47: <code>hcmarl</code>, <code>mappo</code>, <code>ippo</code>, <code>mappo_lag</code>, <code>ppo_lag</code>, <code>cpo</code>, <code>macpo</code>. Step 75 defines the <code>create_agent</code> factory at line 50, which takes a string method name and returns the corresponding agent, dispatched through a clean <code>if/elif</code> chain at lines 64–108. Step 76 sets seeds at lines 187–188 via <code>torch.manual_seed(seed)</code> and <code>np.random.seed(seed)</code> — no wrapper, because simplicity here is worth more than elegance. Step 77 handles the optional MMICRL pre-training at line 120, lazy-importing <code>DemonstrationCollector</code> and <code>MMICRL</code> from <code>mmicrl.py</code> only when the <code>--mmicrl</code> flag is set. Step 78 is the training loop at line 183: collect rollouts, call <code>agent.update()</code>, log, checkpoint, repeat. Step 79 is the logger at <code>logger.py:17–21</code>, defining the nine metric names and writing them to CSV (and optionally W&amp;B) via <code>log_episode(metrics)</code>.</p>
+</div>
+
+<div class="phase"><h4>Phase 9 — Evaluation and experiment launchers (steps 80–83)</h4>
+<div class="lbl">evaluate.py, run_ablations.py, run_baselines.py, run_scaling.py</div>
+<p>Evaluation reuses the training graph — the simplest way to guarantee the evaluation graph never lags behind training. Step 80 imports <code>create_agent</code> from <code>scripts.train</code> at <code>evaluate.py:22</code>, builds the same agent from the same factory, loads a checkpoint, and runs deterministic rollouts by taking the argmax action. Steps 81–83 are the experiment launchers, each a thin loop over a config matrix that shells out to <code>train.py</code>: step 81 sweeps the four ablation knobs (no-ECBF, no-NSWF, no-MMICRL, no-Lagrangian), step 82 runs all baselines with the same seed budget, and step 83 sweeps worker counts across 3, 5, 10, and 20 to expose the centralised critic's scaling behaviour.</p>
+</div>
+
+<div class="phase"><h4>Phase 10 — Notebooks, configs, tests (steps 84–85)</h4>
+<div class="lbl">config/*.yaml, notebooks/*.ipynb, tests/*</div>
+<p>The safety net. None of this is glamorous; all of it is what stops a number from drifting three weeks before submission without anyone noticing. Step 84 covers the configs and notebooks: <code>config/*.yaml</code> holds every hyperparameter and the calibrated muscle parameters from Path G, while <code>notebooks/*.ipynb</code> are strictly read-only consumers of <code>logs/*.csv</code> that produce <code>figures/*.png</code> — no notebook is allowed to retrain, because if one did, the figures it produced would not be reproducible from the committed pipeline. Step 85 is the test suite: 223 pytest tests pinned at zero failures, covering ODE mass conservation, ECBF QP feasibility on edge cases, NSWF allocation correctness against hand-worked examples, PettingZoo contract compliance, end-to-end pipeline trajectories, MMICRL EM convergence, and agent update tensor shapes. Every public symbol is pinned to a known value, so that a regression surfaces as a red test, not a silent drift.</p>
+</div>
+
+</div>
+
+<div class="macro">
+<h4>Phase 1 — Why it exists</h4>
+<p>Every other module depends on the muscle ODE being right. If the integrator drifts mass or the parameters are fabricated, every reward, every safety guarantee, every figure in the paper is downstream of a lie. I keep this phase small on purpose so I can read every line of it.</p>
+
+<h4>Phase 2 — Why it matters</h4>
+<p>The ECBF turns "hopefully safe" into "safe by construction" — Nagumo invariance (Theorem 5.7) gives me a theorem, not a hope. The NSWF allocator turns "fair" into "log-product of surpluses" — also a theorem (Nash 1950, Kaneko &amp; Nakamura 1979). Phase 2 is where the math stops being decorative and starts being load-bearing.</p>
+
+<h4>Phase 3 — Why it is the trust anchor</h4>
+<p>If <code>pipeline.py</code> runs end-to-end without the trainer touching it, I know the physics, the safety filter, and the allocator agree on signs and units. Every later bug becomes a learning bug, not a modelling bug. That separation is what makes debugging tractable.</p>
+
+<h4>Phase 4 — Why it is the legitimacy phase</h4>
+<p>A reviewer will ask whether the muscle parameters are real or fitted to look convenient. Path G against WSD4FEDSRM — 34 real participants, dynamic shoulder rotation, measured endurance times — is the answer. MMICRL exists because workers are not interchangeable: handing every worker the same theta_max silently averages over very different bodies. Latent types let the safety filter be personal.</p>
+
+<h4>Phase 5 — Why it is the contract</h4>
+<p>The PettingZoo wrapper is the only file every method has to agree with. If <code>obs_dim</code>, <code>global_obs_dim</code>, action space, or reward shape drifted between methods, the entire comparative evaluation would be meaningless. This phase is short, but its API is non-negotiable.</p>
+
+<h4>Phase 6 — Why it is honest</h4>
+<p>I keep the networks small because the bottleneck is data, not model capacity. The Lagrangian agent earns its additional complexity only because the cost critic and the multiplier update solve a problem — staying under a safety budget — that the plain value critic cannot.</p>
+
+<h4>Phase 7 — Why it is the comparison</h4>
+<p>Without the OmniSafe and SafePO wrappers I would be comparing my method only against itself with components removed. With them, I am comparing against the field's established constrained MARL methods, on the same environment, the same seeds, the same logger.</p>
+
+<h4>Phase 8 — Why it is one file</h4>
+<p>One <code>train.py</code> with one factory means the seven methods share the same buffer logic, the same logging, the same seeding. Every alternative I have seen — per-method scripts, inheritance hierarchies — drifts within a month.</p>
+
+<h4>Phase 9 — Why it reuses the training graph</h4>
+<p>Importing <code>create_agent</code> from <code>train.py</code> into <code>evaluate.py</code> is the simplest way to guarantee the evaluation graph never lags behind the training graph. One source of truth for what each method actually is.</p>
+
+<h4>Phase 10 — Why it is the safety net</h4>
+<p>Configs in YAML, notebooks read-only, 223 tests pinned. These are not interesting. They are what prevents discovering, the night before submission, that a number drifted three weeks ago and no one noticed.</p>
+</div>
+</div>
+</section>
+
+<!-- ===== TAB 3 — STATUS, OBJECTIVES, PERFORMANCE, NOVELTY ===== -->
+<section class="tab" id="tab3">
+<h2 class="section">Status, Objectives, Performance, Novelty</h2>
+
+<!-- 3.1 Status -->
+<div class="grid2">
+<div class="panel"><h3>Work done</h3>
+<ul>
+<li>3CC-r ODE with 6 calibrated muscle groups (<code>three_cc_r.py</code>)</li>
+<li>ECBF dual-barrier safety filter with CBF-QP (<code>ecbf_filter.py</code>)</li>
+<li>NSWF allocator with disagreement utility (<code>nswf_allocator.py</code>)</li>
+<li>7-step end-to-end pipeline (<code>pipeline.py</code>)</li>
+<li>PettingZoo parallel environment, 3 workers, obs_dim=19, global_obs_dim=55 (<code>pettingzoo_wrapper.py</code>)</li>
+<li>7 training methods: HC-MARL, MAPPO, IPPO, MAPPO-Lag, PPO-Lag, CPO, MACPO (<code>train.py</code>)</li>
+<li>MMICRL with CFDE normalising flows, EM type discovery, constraint networks (<code>mmicrl.py</code>)</li>
+<li>Path G calibration against WSD4FEDSRM, 34 participants (<code>real_data_calibration.py</code>)</li>
+<li>10 classical baselines (<code>_legacy.py</code>)</li>
+<li>223 pytest tests passing, 0 failing</li>
+<li>50K-step dry run completed for all methods without crash</li>
+</ul></div>
+<div class="panel"><h3>Work left</h3>
+<ul>
+<li>Full-budget training runs (5M+ steps per method per seed)</li>
+<li>Ablation sweeps: no-ECBF, no-NSWF, no-MMICRL, no-Lagrangian</li>
+<li>Baseline sweeps against OmniSafe and SafePO</li>
+<li>Scaling sweeps: 3, 5, 10, 20 workers</li>
+<li>All figures and tables</li>
+<li>Paper writing</li>
+<li><b>Zero training runs at full budget have completed. Zero results. Zero figures. Zero paper words.</b></li>
+</ul></div>
+</div>
+
+<!-- 3.2 Objective functions — one card each -->
+<h3 style="font-size:18px;font-weight:600;margin:24px 0 14px">Objective functions (exhaustive audit)</h3>
+<p style="font-size:14px;color:var(--mute);margin:0 0 18px">Every optimisation problem in the codebase, listed one by one. Re-grepped across all files in <code>hcmarl/</code> and <code>scripts/</code>.</p>
+
+<div class="objcard">
+<h4>1. PPO clipped surrogate — MAPPO actor</h4>
+<div class="loc">hcmarl/agents/mappo.py:254</div>
+<span class="formula">L_actor = -min(r(theta)*A, clip(r(theta), 1-eps, 1+eps)*A).mean() - beta * H.mean()</span>
+<p><b>Optimises:</b> The policy parameters theta to maximise expected advantage while staying close to the old policy (trust region via clipping).</p>
+<p><b>Why it exists:</b> Standard PPO objective. Entropy bonus beta*H prevents premature convergence.</p>
+</div>
+
+<div class="objcard">
+<h4>2. Value critic MSE — MAPPO</h4>
+<div class="loc">hcmarl/agents/mappo.py:261</div>
+<span class="formula">L_critic = MSE(V(s), R_GAE)</span>
+<p><b>Optimises:</b> The centralised critic's parameters to predict discounted returns computed via GAE (gamma=0.99, lambda=0.95).</p>
+<p><b>Why it exists:</b> Accurate value estimates reduce variance in the policy gradient.</p>
+</div>
+
+<div class="objcard">
+<h4>3. PPO clipped surrogate — IPPO actor (per-agent)</h4>
+<div class="loc">hcmarl/agents/ippo.py:87</div>
+<span class="formula">L_actor_i = -min(r_i*A_i, clip(r_i)*A_i).mean() - beta * H_i.mean()</span>
+<p><b>Optimises:</b> Each worker's independent policy parameters. Same loss shape as MAPPO, but with a per-agent local value baseline.</p>
+<p><b>Why it exists:</b> IPPO serves as a deliberately weak baseline — no centralised information, no coordination.</p>
+</div>
+
+<div class="objcard">
+<h4>4. Value critic MSE — IPPO (per-agent, local)</h4>
+<div class="loc">hcmarl/agents/ippo.py:95</div>
+<span class="formula">L_critic_i = MSE(V_i(o_i), R_i)</span>
+<p><b>Optimises:</b> Each worker's local critic using only local observations. No global state access.</p>
+<p><b>Why it exists:</b> Independent baseline — measures the value of centralisation by its absence.</p>
+</div>
+
+<div class="objcard">
+<h4>5. Lagrangian actor loss — MAPPO-Lag</h4>
+<div class="loc">hcmarl/agents/mappo_lag.py:237</div>
+<span class="formula">L_actor = -min(surr1, surr2).mean() + lambda * max(cost_surr1, cost_surr2).mean() - beta * H.mean()</span>
+<p><b>Optimises:</b> The policy to maximise reward while penalising constraint violations. The cost term uses <code>max</code> (conservative clipping) to stay safe under ratio truncation.</p>
+<p><b>Why it exists:</b> Constrained CMDP formulation. Lambda scales how aggressively the cost penalty pushes the policy away from unsafe states.</p>
+</div>
+
+<div class="objcard">
+<h4>6. Reward critic MSE — MAPPO-Lag</h4>
+<div class="loc">hcmarl/agents/mappo_lag.py:246</div>
+<span class="formula">L_critic = MSE(V(s), R_GAE)</span>
+<p><b>Optimises:</b> Centralised value critic, same as MAPPO.</p>
+</div>
+
+<div class="objcard">
+<h4>7. Cost critic MSE — MAPPO-Lag</h4>
+<div class="loc">hcmarl/agents/mappo_lag.py:254</div>
+<span class="formula">L_cost_critic = MSE(V_c(s), C_GAE)</span>
+<p><b>Optimises:</b> The cost critic's parameters to predict discounted cumulative cost.</p>
+<p><b>Why it exists:</b> The Lagrangian actor needs an estimate of future cost to know whether it is currently violating the budget.</p>
+</div>
+
+<div class="objcard">
+<h4>8. Lagrangian dual variable update</h4>
+<div class="loc">hcmarl/agents/mappo_lag.py:270</div>
+<span class="formula">L_lambda = -exp(log_lambda) * (mean_cost - cost_limit)</span>
+<p><b>Optimises:</b> The Lagrangian multiplier lambda. Gradient ascent: lambda increases when mean_cost > cost_limit, decreases when the constraint is satisfied.</p>
+<p><b>Why it exists:</b> Dual gradient ascent on the constrained optimisation. Default cost_limit = 0.1.</p>
+</div>
+
+<div class="objcard">
+<h4>9. CFDE flow negative log-likelihood — MMICRL M-step</h4>
+<div class="loc">hcmarl/mmicrl.py:369 (also line 862 for the full-pipeline variant)</div>
+<span class="formula">L_flow = -log p(x|z).mean()</span>
+<p><b>Optimises:</b> The MADE/MAF flow parameters to maximise the conditional density of per-step features x given type assignment z.</p>
+<p><b>Why it exists:</b> The M-step of EM. After types are assigned (E-step), the flow is trained to model each type's state-action distribution.</p>
+</div>
+
+<div class="objcard">
+<h4>10. EM type assignment — MMICRL E-step</h4>
+<div class="loc">hcmarl/mmicrl.py:286 (per-step), line 328 (trajectory-level)</div>
+<span class="formula">z* = argmax_z p(z|tau) where p(z|tau) = softmax(log p(z) + mean_{(s,a)} log p(s,a|z))</span>
+<p><b>Optimises:</b> The assignment of demonstrations to latent types. Hard MAP assignment.</p>
+<p><b>Why it exists:</b> The E-step of EM. Trajectory-level aggregation (mean, not sum) prevents length-dependent mode collapse.</p>
+</div>
+
+<div class="objcard">
+<h4>11. MMICRL outer objective (Eq 10)</h4>
+<div class="loc">hcmarl/mmicrl.py:1070</div>
+<span class="formula">J = lambda2 * I(tau; z) + (lambda1 - lambda2) * H[pi(tau)]</span>
+<p><b>Optimises:</b> The overall MMICRL objective — mutual information between trajectories and types, plus a marginal entropy term. When lambda1 = lambda2, this reduces to pure MI.</p>
+<p><b>Why it exists:</b> This is the top-level objective from Qiao et al. that the EM procedure maximises. It measures how informative the type assignments are.</p>
+</div>
+
+<div class="objcard">
+<h4>12. ConstraintNetwork BCE</h4>
+<div class="loc">hcmarl/mmicrl.py:514</div>
+<span class="formula">L_constraint = BCE(c_theta(s), label)  where label=1 for expert, label=0 for agent</span>
+<p><b>Optimises:</b> A small MLP to distinguish expert states (safe) from agent states (potentially unsafe). The decision boundary at c_theta = 0.5, swept across MF values, yields theta_max per muscle.</p>
+<p><b>Why it exists:</b> Learns the constraint boundary from demonstrations rather than hand-tuning theta_max.</p>
+</div>
+
+<div class="objcard">
+<h4>13. ECBF quadratic program</h4>
+<div class="loc">hcmarl/ecbf_filter.py:270</div>
+<span class="formula">C* = argmin_{C >= 0} ||C - C_nom||^2  s.t.  ECBF(Eq 18) and CBF(Eq 23)</span>
+<p><b>Optimises:</b> The neural drive C at each timestep. Finds the closest safe control to the policy's nominal proposal.</p>
+<p><b>Why it exists:</b> Hard safety guarantee. The QP enforces both barriers (fatigue ceiling and resting floor) simultaneously, at every step, regardless of what the policy proposes.</p>
+</div>
+
+<div class="objcard">
+<h4>14. NSWF allocation objective (Eq 33)</h4>
+<div class="loc">hcmarl/nswf_allocator.py:255–266</div>
+<span class="formula">a* = argmax_{a} sum_i log(U(i, a_i) - D_i(MF_i))</span>
+<p><b>Optimises:</b> The task assignment to maximise the Nash Social Welfare — the product of worker surpluses in log space.</p>
+<p><b>Why it exists:</b> Guarantees fairness: no worker can be assigned a task whose surplus is below their fatigue-driven disagreement threshold. The log transform makes the product compatible with RL's additive reward structure.</p>
+</div>
+
+<div class="objcard">
+<h4>15. Path G calibration — grid search</h4>
+<div class="loc">hcmarl/real_data_calibration.py (predict_endurance_time, line 44)</div>
+<span class="formula">(F*, R*) = argmin_{F, R} |ET_observed - ET_predicted(F, R, r, target_load)|</span>
+<p><b>Optimises:</b> Per-subject (F, R) parameters to match observed endurance times from the WSD4FEDSRM dataset (34 participants, dynamic shoulder rotation).</p>
+<p><b>Why it exists:</b> Anchors the simulator to real human fatigue data. Without this, the 3CC-r parameters would be untested population means, not calibrated individual fits.</p>
+</div>
+
+<div class="objcard">
+<h4>16. k-means warm start for type centroids</h4>
+<div class="loc">hcmarl/mmicrl.py:413</div>
+<span class="formula">z_i = argmin_k ||x_i - mu_k||^2</span>
+<p><b>Optimises:</b> Initial cluster assignments before EM begins. Standard k-means on the feature space.</p>
+<p><b>Why it exists:</b> EM is sensitive to initialisation. k-means provides a warm start that prevents degenerate initial assignments (e.g. all trajectories assigned to one type).</p>
+</div>
+
+<!-- 3.3 Performance measures — one card each -->
+<h3 style="font-size:18px;font-weight:600;margin:24px 0 14px">Performance measures (exhaustive)</h3>
+<p style="font-size:14px;color:var(--mute);margin:0 0 18px">The nine metrics in <code>logger.py:17–21</code>, computed by <code>compute_episode_metrics</code> (line 65). Plus derived metrics.</p>
+
+<div class="perfcard">
+<h4>1. violation_rate <span class="dir dir-low">lower is better</span></h4>
+<div class="loc">logger.py:73</div>
+<span class="formula">violation_rate = total_violations / (n_steps * n_workers * n_muscles)</span>
+<p>Fraction of (step, worker, muscle) slots where <code>MF > theta_max</code>. A method with violation_rate = 0 never breaches any safety threshold.</p>
+</div>
+
+<div class="perfcard">
+<h4>2. cumulative_cost <span class="dir dir-low">lower is better</span></h4>
+<div class="loc">logger.py:74</div>
+<span class="formula">cumulative_cost = total_violations (count)</span>
+<p>Raw count of safety violations across the episode. This is the quantity the Lagrangian multiplier lambda penalises.</p>
+</div>
+
+<div class="perfcard">
+<h4>3. safety_rate <span class="dir dir-high">higher is better</span></h4>
+<div class="loc">logger.py:75</div>
+<span class="formula">safety_rate = safe_steps / n_steps</span>
+<p>Fraction of timesteps where no worker violates any threshold. Complement of per-step violation frequency.</p>
+</div>
+
+<div class="perfcard">
+<h4>4. tasks_completed <span class="dir dir-high">higher is better</span></h4>
+<div class="loc">logger.py:76</div>
+<span class="formula">tasks_completed = count of productive tasks completed in the episode</span>
+<p>Measures throughput. A method that rests all workers achieves safety_rate = 1 but tasks_completed = 0.</p>
+</div>
+
+<div class="perfcard">
+<h4>5. cumulative_reward <span class="dir dir-high">higher is better</span></h4>
+<div class="loc">logger.py:77</div>
+<span class="formula">cumulative_reward = sum of nswf_reward across all steps and workers</span>
+<p>The RL return. Shaped by the NSWF log-surplus, so maximising this is equivalent to maximising the Nash product of surpluses (Eq 33).</p>
+</div>
+
+<div class="perfcard">
+<h4>6. jain_fairness <span class="dir dir-high">higher is better</span></h4>
+<div class="loc">logger.py:82</div>
+<span class="formula">jain_fairness = (sum(tpw))^2 / (n * sum(tpw^2))</span>
+<p>Jain's fairness index over per-worker task counts. Value in [1/n, 1]. jain_fairness = 1 means every worker completed the same number of tasks.</p>
+</div>
+
+<div class="perfcard">
+<h4>7. peak_fatigue <span class="dir dir-low">lower is better</span></h4>
+<div class="loc">logger.py:83</div>
+<span class="formula">peak_fatigue = max MF across all workers and muscles during the episode</span>
+<p>Worst-case fatigue level observed. If ECBF is working, this should stay below theta_max.</p>
+</div>
+
+<div class="perfcard">
+<h4>8. forced_rest_rate <span class="dir dir-low">lower is better</span></h4>
+<div class="loc">logger.py:84</div>
+<span class="formula">forced_rest_rate = forced_rests / (n_steps * n_workers)</span>
+<p>Fraction of (step, worker) slots where the ECBF forced the worker to rest. High values mean the policy is proposing unsafe actions that the filter has to override.</p>
+</div>
+
+<div class="perfcard">
+<h4>9. constraint_recovery_time <span class="dir dir-low">lower is better</span></h4>
+<div class="loc">logger.py:86</div>
+<span class="formula">constraint_recovery_time = mean(recovery_times) in steps</span>
+<p>Average number of steps to recover from a constraint violation (MF dropping back below theta_max). Shorter is better.</p>
+</div>
+
+<h4 style="margin-top:20px;font-size:15px;font-weight:600">Derived metrics (computed from the nine above)</h4>
+
+<div class="perfcard">
+<h4>Cost-vs-return Pareto frontier</h4>
+<p>Plot cumulative_reward (y) against cumulative_cost (x) for all seven methods. The ideal point is top-left: high return, zero cost. The Pareto frontier identifies methods that are not dominated.</p>
+</div>
+
+<div class="perfcard">
+<h4>Sample efficiency curves</h4>
+<p>cumulative_reward as a function of training steps. Shows how quickly each method converges.</p>
+</div>
+
+<div class="perfcard">
+<h4>Scaling curves</h4>
+<p>cumulative_reward and wall-clock time as functions of n_workers (3, 5, 10, 20). Exposes the centralised critic's computational bottleneck.</p>
+</div>
+
+<div class="perfcard">
+<h4>Per-muscle fatigue heatmap</h4>
+<p>MF per muscle group over the episode. Six rows (muscles), time on x-axis. Shows which muscles the policy loads and which it rests.</p>
+</div>
+
+<div class="perfcard">
+<h4>Intervention frequency timeline</h4>
+<p>ECBF intervention count per step over the episode. A well-trained policy should see decreasing interventions over training.</p>
+</div>
+
+<!-- 3.4 Novelty -->
+<h3 style="font-size:18px;font-weight:600;margin:24px 0 14px">Novelty</h3>
+<div class="panel">
+<ul>
+<li>The <b>integration</b> of a relative-degree-2 ECBF filter, a Nash Social Welfare reward shaping, MMICRL latent worker types, and Lagrangian MAPPO inside a single multi-agent learning loop. None of the four ideas is new in isolation. The wiring is.</li>
+<li>The <b>dual barrier</b> formulation (<code>h = theta_max - MF</code> and <code>h2 = MR >= 0</code>) on the 3CC-r ODE, with rest-phase safety proved via Nagumo invariance (Theorem 5.7). This specific construction — applying ECBF to a physiological fatigue model — has not been done before.</li>
+<li>The <b>per-worker, per-muscle theta_max</b> dictionary produced by MMICRL and consumed by the safety filter. This personalises safety thresholds by latent type discovered from demonstrations, rather than by demographic proxy.</li>
+<li>The <b>Path G calibration loop</b> against WSD4FEDSRM, which ties the simulator's muscle parameters to real measured endurance times from 34 participants rather than relying on untested population means.</li>
+</ul>
+</div>
+
+</section>
+
+<!-- ===== TAB 4 — VISUALISATION ===== -->
+<section class="tab" id="tab4">
+<h2 class="section">Visualisation</h2>
+<p class="lede">User journey, creator journey, output figures, and the performance dashboard. Anything tied to a number that has not been measured yet is marked tentative.</p>
+
+<div class="viz"><h3>End-to-end user journey</h3>
+<p>Two distinct deployments share the same physiological model. In the <b>simulator path</b>, workers are rolled out inside the PettingZoo environment so the policy can train without touching real humans — letting an untrained RL agent assign tasks to a real worker is unsafe. In the <b>real warehouse path</b>, the trained policy reads live fatigue state from sensors or a digital twin, runs the same ECBF filter, and proposes an assignment that a human supervisor accepts or overrides. Same 3CC-r model, two clocks.</p>
+<svg viewBox="0 0 900 220" class="svgwrap" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1f4ed8"/></marker></defs>
+<rect x="20" y="20" width="170" height="60" rx="6" fill="#e6f0fb" stroke="#2b6cb0"/><text x="105" y="48" text-anchor="middle" font-family="Inter" font-size="13" font-weight="600">3CC-r physiology</text><text x="105" y="66" text-anchor="middle" font-size="11" fill="#555">shared muscle ODE</text>
+<rect x="240" y="20" width="170" height="60" rx="6" fill="#e7f5ec" stroke="#2f855a"/><text x="325" y="48" text-anchor="middle" font-size="13" font-weight="600">Simulator</text><text x="325" y="66" text-anchor="middle" font-size="11" fill="#555">PettingZoo env, train</text>
+<rect x="240" y="130" width="170" height="60" rx="6" fill="#fdf3e0" stroke="#b7791f"/><text x="325" y="158" text-anchor="middle" font-size="13" font-weight="600">Real warehouse</text><text x="325" y="176" text-anchor="middle" font-size="11" fill="#555">sensor / digital twin</text>
+<rect x="460" y="75" width="170" height="60" rx="6" fill="#ede5f7" stroke="#553c9a"/><text x="545" y="103" text-anchor="middle" font-size="13" font-weight="600">ECBF filter</text><text x="545" y="121" text-anchor="middle" font-size="11" fill="#555">CBF-QP projection</text>
+<rect x="680" y="75" width="200" height="60" rx="6" fill="#fde6ec" stroke="#9f1239"/><text x="780" y="103" text-anchor="middle" font-size="13" font-weight="600">Assignment</text><text x="780" y="121" text-anchor="middle" font-size="11" fill="#555">supervisor accepts/overrides</text>
+<line x1="190" y1="50" x2="240" y2="50" stroke="#1f4ed8" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="190" y1="50" x2="240" y2="160" stroke="#1f4ed8" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="410" y1="50" x2="460" y2="95" stroke="#1f4ed8" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="410" y1="160" x2="460" y2="115" stroke="#1f4ed8" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="630" y1="105" x2="680" y2="105" stroke="#1f4ed8" stroke-width="1.5" marker-end="url(#ah)"/>
+</svg>
+</div>
+
+<div class="viz"><h3>Creator journey (no dates)</h3>
+<div class="journey">
+<div class="step"><b>1</b>Read Looft &amp; Frey-Law and the related muscle-fatigue literature. Wrote the 3CC-r ODE in Python. Proved mass conservation by hand.</div>
+<div class="step"><b>2</b>Pinned the ODE with unit tests against random initial conditions. Verified Theorem 3.2 numerically for all six muscles.</div>
+<div class="step"><b>3</b>Translated the relative-degree-2 ECBF math into a CVXPY QP. Debugged the dual barrier signs against pen-and-paper examples.</div>
+<div class="step"><b>4</b>Proved rest-phase safety via Nagumo invariance (Theorem 5.7). Wrote the rest-phase test. Validated Assumption 5.5.</div>
+<div class="step"><b>5</b>Implemented the NSWF allocator with the divergent disagreement utility. Verified Eq 33 against hand-worked allocations.</div>
+<div class="step"><b>6</b>Wired ECBF, NSWF, and 3CC-r into <code>pipeline.py</code> as the seven-step closed loop. Locked it down with end-to-end tests.</div>
+<div class="step"><b>7</b>Built the PettingZoo parallel wrapper. Settled on <code>obs_dim=19</code>, <code>global_obs_dim=55</code>, action space <code>Discrete(4)</code>. Wrote the reward functions and task profiles.</div>
+<div class="step"><b>8</b>Implemented MAPPO, IPPO, MAPPO-Lagrangian against shared <code>networks.py</code>. Composed the integrated <code>HCMARLAgent</code>. Wrote all agent tests.</div>
+<div class="step"><b>9</b>Wrote MMICRL with the CFDE normalising flow stack. Hand-verified Eq 10. Debugged the EM loop against synthetic two-mode data. Built the constraint network.</div>
+<div class="step"><b>10</b>Ran Path G against WSD4FEDSRM — 34 real participants, dynamic shoulder rotation. Calibrated six muscles. Pushed calibrated parameters into configs. Verified the full codebase with 50K-step dry runs. Began Phase B.</div>
+</div>
+</div>
+
+<div class="viz"><h3>Output visualisations <span class="tentative">TENTATIVE — pending Phase B experiments</span></h3>
+
+<h4 style="margin-top:18px;font-size:14px">3CC-r compartments over time</h4>
+<svg viewBox="0 0 800 200" class="svgwrap" xmlns="http://www.w3.org/2000/svg">
+<line x1="50" y1="170" x2="780" y2="170" stroke="#333"/><line x1="50" y1="20" x2="50" y2="170" stroke="#333"/>
+<text x="50" y="190" font-size="11">0s</text><text x="780" y="190" font-size="11" text-anchor="end">8h</text>
+<text x="30" y="170" font-size="11" text-anchor="end">0</text><text x="30" y="25" font-size="11" text-anchor="end">1</text>
+<path d="M50,40 Q200,55 400,90 T780,150" fill="none" stroke="#2b6cb0" stroke-width="2"/>
+<path d="M50,165 Q200,140 400,100 T780,55" fill="none" stroke="#9f1239" stroke-width="2"/>
+<path d="M50,140 Q200,150 400,140 T780,130" fill="none" stroke="#2f855a" stroke-width="2"/>
+<text x="600" y="40" font-size="11" fill="#2b6cb0">MA (active)</text>
+<text x="600" y="60" font-size="11" fill="#9f1239">MF (fatigued)</text>
+<text x="600" y="80" font-size="11" fill="#2f855a">MR (resting)</text>
+</svg>
+<p class="cap">Three compartments evolving across a simulated 8-hour shift. Curves are illustrative until full-budget runs land.</p>
+
+<h4 style="margin-top:24px;font-size:14px">ECBF safety envelope</h4>
+<svg viewBox="0 0 800 220" class="svgwrap" xmlns="http://www.w3.org/2000/svg">
+<line x1="50" y1="190" x2="780" y2="190" stroke="#333"/><line x1="50" y1="20" x2="50" y2="190" stroke="#333"/>
+<line x1="50" y1="60" x2="780" y2="60" stroke="#9f1239" stroke-dasharray="6 4"/>
+<text x="60" y="55" font-size="11" fill="#9f1239">theta_max</text>
+<path d="M50,180 Q200,160 350,120 T700,70 L780,80" fill="none" stroke="#2b6cb0" stroke-width="2"/>
+<path d="M50,180 Q200,150 350,90 T700,40 L780,30" fill="none" stroke="#9f1239" stroke-width="2" stroke-dasharray="3 3"/>
+<text x="600" y="100" font-size="11" fill="#2b6cb0">with ECBF</text>
+<text x="600" y="50" font-size="11" fill="#9f1239">without ECBF</text>
+</svg>
+<p class="cap">MF trajectory with and without the ECBF filter. The filtered policy stays under theta_max by construction; the unfiltered nominal breaches it.</p>
+
+<h4 style="margin-top:24px;font-size:14px">NSWF disagreement utility D_i(MF)</h4>
+<svg viewBox="0 0 800 200" class="svgwrap" xmlns="http://www.w3.org/2000/svg">
+<line x1="50" y1="170" x2="780" y2="170" stroke="#333"/><line x1="50" y1="20" x2="50" y2="170" stroke="#333"/>
+<text x="50" y="190" font-size="11">MF=0</text><text x="780" y="190" font-size="11" text-anchor="end">MF=1</text>
+<path d="M50,168 Q400,160 650,100 T770,25" fill="none" stroke="#553c9a" stroke-width="2"/>
+<text x="120" y="50" font-size="11" fill="#553c9a">D_i(MF) = kappa * MF^2 / (1 - MF)</text>
+</svg>
+<p class="cap">Eq 32. Diverges as MF approaches 1, which makes the NSWF objective penalise assignments to exhausted workers.</p>
+
+<h4 style="margin-top:24px;font-size:14px">Cost-vs-return Pareto frontier (seven methods)</h4>
+<svg viewBox="0 0 800 240" class="svgwrap" xmlns="http://www.w3.org/2000/svg">
+<line x1="50" y1="210" x2="780" y2="210" stroke="#333"/><line x1="50" y1="20" x2="50" y2="210" stroke="#333"/>
+<text x="400" y="232" text-anchor="middle" font-size="11">episodic cost (lower is better)</text>
+<text x="20" y="115" text-anchor="middle" font-size="11" transform="rotate(-90 20 115)">return (higher is better)</text>
+<circle cx="650" cy="180" r="6" fill="#9f1239"/><text x="660" y="184" font-size="11">IPPO</text>
+<circle cx="600" cy="160" r="6" fill="#b7791f"/><text x="610" y="164" font-size="11">MAPPO</text>
+<circle cx="350" cy="120" r="6" fill="#2f855a"/><text x="360" y="124" font-size="11">MAPPO-Lag</text>
+<circle cx="280" cy="90" r="6" fill="#553c9a"/><text x="290" y="94" font-size="11">CPO</text>
+<circle cx="200" cy="70" r="6" fill="#1f4ed8"/><text x="210" y="74" font-size="11">HC-MARL (ours)</text>
+<circle cx="500" cy="170" r="6" fill="#888"/><text x="510" y="174" font-size="11">round-robin</text>
+<circle cx="700" cy="200" r="6" fill="#888"/><text x="710" y="204" font-size="11">random</text>
+</svg>
+<p class="cap">Tentative layout for the headline figure. Lower cost + higher return = top-left. Real coordinates pending Phase B.</p>
+
+<h4 style="margin-top:24px;font-size:14px">Per-muscle fatigue heatmap</h4>
+<svg viewBox="0 0 600 200" class="svgwrap" xmlns="http://www.w3.org/2000/svg">
+<g font-size="10">
+<text x="10" y="30">shoulder</text><text x="10" y="55">ankle</text><text x="10" y="80">knee</text><text x="10" y="105">elbow</text><text x="10" y="130">trunk</text><text x="10" y="155">grip</text>
+</g>
+<g transform="translate(80,15)">
+<rect width="40" height="20" fill="#fee5d9"/><rect x="50" width="40" height="20" fill="#fcae91"/><rect x="100" width="40" height="20" fill="#fb6a4a"/><rect x="150" width="40" height="20" fill="#de2d26"/><rect x="200" width="40" height="20" fill="#a50f15"/>
+<rect y="25" width="40" height="20" fill="#fee5d9"/><rect x="50" y="25" width="40" height="20" fill="#fee5d9"/><rect x="100" y="25" width="40" height="20" fill="#fcae91"/><rect x="150" y="25" width="40" height="20" fill="#fcae91"/><rect x="200" y="25" width="40" height="20" fill="#fb6a4a"/>
+<rect y="50" width="40" height="20" fill="#fee5d9"/><rect x="50" y="50" width="40" height="20" fill="#fcae91"/><rect x="100" y="50" width="40" height="20" fill="#fb6a4a"/><rect x="150" y="50" width="40" height="20" fill="#fb6a4a"/><rect x="200" y="50" width="40" height="20" fill="#de2d26"/>
+<rect y="75" width="40" height="20" fill="#fee5d9"/><rect x="50" y="75" width="40" height="20" fill="#fee5d9"/><rect x="100" y="75" width="40" height="20" fill="#fcae91"/><rect x="150" y="75" width="40" height="20" fill="#fb6a4a"/><rect x="200" y="75" width="40" height="20" fill="#de2d26"/>
+<rect y="100" width="40" height="20" fill="#fee5d9"/><rect x="50" y="100" width="40" height="20" fill="#fcae91"/><rect x="100" y="100" width="40" height="20" fill="#fb6a4a"/><rect x="150" y="100" width="40" height="20" fill="#de2d26"/><rect x="200" y="100" width="40" height="20" fill="#a50f15"/>
+<rect y="125" width="40" height="20" fill="#fee5d9"/><rect x="50" y="125" width="40" height="20" fill="#fee5d9"/><rect x="100" y="125" width="40" height="20" fill="#fcae91"/><rect x="150" y="125" width="40" height="20" fill="#fcae91"/><rect x="200" y="125" width="40" height="20" fill="#fb6a4a"/>
+</g>
+<g font-size="10" transform="translate(80,170)">
+<text x="20" text-anchor="middle">1h</text><text x="70" text-anchor="middle">2h</text><text x="120" text-anchor="middle">4h</text><text x="170" text-anchor="middle">6h</text><text x="220" text-anchor="middle">8h</text>
+</g>
+</svg>
+<p class="cap">Six muscle groups across an 8-hour shift. Deeper red = higher MF. Shoulder and trunk fatigue fastest (highest F); ankle and grip are slower. Tentative values.</p>
+
+<h4 style="margin-top:24px;font-size:14px">Nine-metric radar (per method)</h4>
+<svg viewBox="0 0 400 320" class="svgwrap" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(200,160)">
+<polygon points="0,-130 112,-65 112,65 0,130 -112,65 -112,-65" fill="none" stroke="#ccc"/>
+<polygon points="0,-95 82,-48 82,48 0,95 -82,48 -82,-48" fill="none" stroke="#eee"/>
+<polygon points="0,-60 52,-30 52,30 0,60 -52,30 -52,-30" fill="none" stroke="#eee"/>
+<polygon points="0,-115 95,-50 70,55 0,100 -90,40 -100,-50" fill="rgba(31,78,216,0.18)" stroke="#1f4ed8" stroke-width="2"/>
+<text x="0" y="-140" text-anchor="middle" font-size="10">Return</text>
+<text x="125" y="-65" font-size="10">Safety rate</text>
+<text x="125" y="80" font-size="10">Jain fairness</text>
+<text x="0" y="150" text-anchor="middle" font-size="10">Tasks completed</text>
+<text x="-125" y="80" font-size="10" text-anchor="end">1 - violation_rate</text>
+<text x="-125" y="-65" font-size="10" text-anchor="end">1 - peak_fatigue</text>
+</g>
+</svg>
+<p class="cap">HC-MARL (blue shaded) on six of the nine metrics. Remaining three (forced_rest_rate, constraint_recovery_time, cumulative_cost) in a second radar. Tentative shape.</p>
+
+</div>
+
+<div class="viz"><h3>Interactive exploration (Desmos)</h3>
+<p>For interactive exploration of the divergent disagreement utility and the rest-phase safety boundary, paste these into <a href="https://www.desmos.com/calculator" style="color:var(--accent)">Desmos</a>:</p>
+<pre style="background:var(--soft);padding:12px;border-radius:5px;font-size:12px"># D_i(MF) = kappa * MF^2 / (1 - MF)
+y = 0.5 * x^2 / (1 - x)    {0 &lt;= x &lt; 1}
+
+# Rest-phase safety threshold (Eq 25, Theorem 5.7)
+# theta_min_max = F / (F + R*r)
+# For shoulder: 0.0146 / (0.0146 + 0.00058*15) = 0.627
+y = 0.627    (horizontal line)</pre>
+</div>
+
+</section>
+
+<script>
+function switchTab(i){
+  document.querySelectorAll('.tabbtn').forEach(b=>b.classList.toggle('active',b.dataset.tab==i));
+  document.querySelectorAll('.tab').forEach((s,k)=>s.classList.toggle('active',String(k)===String(i)));
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('.tabbtn').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
+document.addEventListener('keydown',e=>{if(/^[0-4]$/.test(e.key)&&!e.ctrlKey&&!e.metaKey&&!e.altKey) switchTab(e.key);});
+</script>
+</body></html>

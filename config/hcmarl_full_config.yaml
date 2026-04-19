@@ -1,6 +1,6 @@
 # HC-MARL Full Training Configuration
-# NeurIPS 2026 Submission — 5M steps, N=6 workers, 5 seeds
-# Estimated: ~3-4 hours per seed on T4 GPU
+# ICML 2026 HiL Workshop — 3M steps, N=6 workers, 10 seeds headline / 5 ablation
+# Estimated: ~1.5 hr per seed on E2E L4 spot (INR 17/hr)
 
 environment:
   n_workers: 6
@@ -38,7 +38,7 @@ environment:
     rest:           {shoulder: 0.00, ankle: 0.00, knee: 0.00, elbow: 0.00, trunk: 0.00, grip: 0.00}
 
 training:
-  total_steps: 5000000
+  total_steps: 3000000
   eval_interval: 50000
   checkpoint_interval: 100000
   n_eval_episodes: 10

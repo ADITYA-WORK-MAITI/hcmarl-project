@@ -78,3 +78,6 @@ paper/*.fls
 # ---------- Secrets ----------
 .env
 *.key
+
+# ---------- Scratch text extractions (session artifacts, not source) ----------
+_*_text.txt

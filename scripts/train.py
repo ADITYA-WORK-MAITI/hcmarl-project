@@ -281,12 +281,25 @@ def run_mmicrl_pretrain(cfg, log_dir="logs"):
 
 def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmicrl_model=None,
           ecbf_mode="on", use_nswf=True, disagreement_type="divergent",
-          drive_backup_dir=None, resume_state=None):
+          drive_backup_dir=None, resume_state=None, run_name=None,
+          budget_inr=0.0, cost_per_hour=49.0, budget_margin=0.95):
     """Full training loop with logging and checkpointing.
 
     If resume_state is given (loaded from run_state.pt by main()), training
     counters, RNG state, and theta_max are restored from it so a resumed
     run picks up the previous trajectory rather than restarting from zero.
+
+    run_name overrides the per-method log/ckpt subdir. Default is `method`,
+    so headline runs land at logs/{method}/seed_{seed}/. Ablation runs pass
+    e.g. "ablation_plus_ecbf" so they don't collide with the headline mappo
+    logs at logs/mappo/seed_0/.
+
+    BUDGET KILL-SWITCH (the only physical guarantee against overspend):
+    If budget_inr > 0, training is hard-aborted when wall-clock spend
+    reaches budget_inr * budget_margin. Spend = elapsed_hours * cost_per_hour.
+    Defaults: cost_per_hour=49.0 (E2E Networks L4 on-demand), margin=0.95
+    (kill at 95% so checkpointing has time to flush). budget_inr=0 disables
+    the gate (default for backward-compat with existing tests).
     """
     env_cfg = cfg.get("environment", {})
     train_cfg = cfg.get("training", {})
@@ -332,10 +345,13 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
                   f"({n_types} types, {mode}; floors: {dict(config_theta_defaults)})")
             print(f"  Effective per-worker theta_max: {theta_max}")
 
-    # Directories
-    run_name = f"{method}_seed{seed}"
-    ckpt_dir = os.path.join("checkpoints", method, f"seed_{seed}")
-    log_dir = os.path.join("logs", method, f"seed_{seed}")
+    # Directories. run_name (if provided by caller) overrides the per-method
+    # subdir so ablation rungs land in logs/ablation_<rung>/seed_<s>/ instead
+    # of overwriting the headline logs at logs/<method>/seed_<s>/.
+    log_subdir = run_name if run_name else method
+    wandb_run_name = f"{log_subdir}_seed{seed}"
+    ckpt_dir = os.path.join("checkpoints", log_subdir, f"seed_{seed}")
+    log_dir = os.path.join("logs", log_subdir, f"seed_{seed}")
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(log_dir, exist_ok=True)
 
@@ -405,7 +421,7 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
         log_dir=log_dir,
         use_wandb=cfg.get("logging", {}).get("use_wandb", False),
         wandb_project=cfg.get("logging", {}).get("project_name", "hcmarl"),
-        run_name=run_name,
+        run_name=wandb_run_name,
         config=cfg,
     )
 
@@ -429,6 +445,17 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     cost_ema = 0.0  # Exponential moving average of per-step cost rate
     next_checkpoint_step = checkpoint_interval
     start_time = time.time()
+
+    # BUDGET KILL-SWITCH: convert INR ceiling -> wall-clock seconds.
+    # When budget_inr <= 0, the gate is disabled (no overhead).
+    # Spend model: simple wall-clock * hourly_rate; matches how E2E
+    # Networks bills L4 instances. The gate is checked every env step
+    # (see budget_seconds comparison below).
+    if budget_inr > 0.0 and cost_per_hour > 0.0:
+        budget_seconds = (budget_inr * budget_margin / cost_per_hour) * 3600.0
+    else:
+        budget_seconds = float("inf")
+    budget_tripped = False
 
     # D4: lazy-agent kill-switch state. Parameters live in
     # config/experiment_matrix.yaml; the training config may override them
@@ -536,6 +563,11 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
             episode_reward += sum(rewards.values())
             episode_steps += 1
             global_step += 1
+
+            # BUDGET KILL-SWITCH: physical guarantee against L4 overspend.
+            if (time.time() - start_time) >= budget_seconds:
+                budget_tripped = True
+                break  # exit step loop; outer loop sees budget_tripped
 
             # Track metrics
             step_violations = 0
@@ -718,6 +750,21 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
                   f">= {lazy_window:,} consecutive steps — halting run.")
             break
 
+        # BUDGET KILL-SWITCH: outer-loop exit with checkpoint flush.
+        if budget_tripped:
+            elapsed_hr = (time.time() - start_time) / 3600.0
+            spent_inr = elapsed_hr * cost_per_hour
+            print(f"[budget kill-switch] {spent_inr:.0f}/{budget_inr:.0f} INR "
+                  f"({100*spent_inr/budget_inr:.1f}%) at step {global_step:,} — halting.")
+            if hasattr(agent, 'save'):
+                agent.save(os.path.join(ckpt_dir, "checkpoint_budget_halt.pt"))
+                _write_run_state(
+                    os.path.join(ckpt_dir, "run_state.pt"),
+                    global_step, episode_count, cost_ema, best_reward,
+                    theta_max, seed, method,
+                )
+            break
+
         # Print progress
         if episode_count % 50 == 0:
             elapsed = time.time() - start_time
@@ -797,6 +844,9 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
         "best_reward": best_reward,
         "wall_time_seconds": elapsed,
         "wall_time_hours": elapsed / 3600,
+        "budget_tripped": budget_tripped,
+        "budget_inr": budget_inr,
+        "spent_inr": (elapsed / 3600) * cost_per_hour if budget_inr > 0 else None,
     }
     with open(os.path.join(log_dir, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
@@ -842,6 +892,18 @@ def main():
     parser.add_argument("--drive-backup-dir", type=str, default=None,
                         help="If set, mirror checkpoints+logs here every checkpoint interval. "
                              "Use /content/drive/MyDrive/hcmarl_backup on Colab to survive runtime disconnects.")
+    parser.add_argument("--run-name", type=str, default=None,
+                        help="Override the per-method log/ckpt subdir. Default uses --method, "
+                             "so headline runs go to logs/{method}/seed_{seed}/. Ablation runs "
+                             "should pass e.g. 'ablation_plus_ecbf' to avoid overwriting the "
+                             "headline mappo logs at logs/mappo/seed_0/.")
+    parser.add_argument("--budget-inr", type=float, default=0.0,
+                        help="Hard kill-switch: halt training when wall-clock spend reaches "
+                             "this INR amount. Default 0 disables. Set to 2500 for hard cap.")
+    parser.add_argument("--cost-per-hour", type=float, default=49.0,
+                        help="GPU instance hourly rate in INR. Default 49.0 = E2E Networks L4 on-demand.")
+    parser.add_argument("--budget-margin", type=float, default=0.95,
+                        help="Trip kill-switch at budget_inr * margin (default 0.95) so checkpoint can flush.")
     args = parser.parse_args()
 
     # Load config
@@ -923,7 +985,9 @@ def main():
     if run_mmicrl:
         # Write MMICRL artifacts under per-seed log dir so concurrent
         # seeds (5 Colab accounts) don't overwrite each other's results.
-        mmicrl_log_dir = os.path.join("logs", args.method, f"seed_{args.seed}")
+        # Use run_name if provided so ablation rungs don't share MMICRL output.
+        mmicrl_log_subdir = args.run_name if args.run_name else args.method
+        mmicrl_log_dir = os.path.join("logs", mmicrl_log_subdir, f"seed_{args.seed}")
         mmicrl_results, mmicrl_model = run_mmicrl_pretrain(cfg, log_dir=mmicrl_log_dir)
 
     # Inject CLI overrides into config
@@ -933,7 +997,10 @@ def main():
 
     train(cfg, args.method, args.seed, device, args.resume, mmicrl_results, mmicrl_model,
           ecbf_mode=ecbf_mode, use_nswf=use_nswf, disagreement_type=disagreement_type,
-          drive_backup_dir=args.drive_backup_dir, resume_state=resume_state)
+          drive_backup_dir=args.drive_backup_dir, resume_state=resume_state,
+          run_name=args.run_name,
+          budget_inr=args.budget_inr, cost_per_hour=args.cost_per_hour,
+          budget_margin=args.budget_margin)
 
 
 if __name__ == "__main__":

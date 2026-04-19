@@ -69,9 +69,9 @@ class TestD1ExperimentMatrix:
                 f"headline method {name}: config {entry['config']} missing"
             )
 
-    def test_curve_anchors_are_one_three_five_million(self):
+    def test_curve_anchors_present(self):
         data = yaml.safe_load(MATRIX_PATH.read_text(encoding="utf-8"))
-        assert data["curve_anchors_steps"] == [1_000_000, 3_000_000, 5_000_000]
+        assert data["curve_anchors_steps"] == [500_000, 1_000_000, 2_000_000, 3_000_000]
 
     def test_lazy_agent_kill_switch_parameters_present(self):
         data = yaml.safe_load(MATRIX_PATH.read_text(encoding="utf-8"))
@@ -263,6 +263,78 @@ class TestD3LearningCurveAggregator:
             report = aggregate(str(matrix_path), td)
             assert report["complete"] is False
             assert any("mappo" in e and "seed 1" in e for e in report["errors"])
+
+    def test_aggregate_handles_ablation_grid(self):
+        """When matrix declares ablation rungs, aggregate() must read from
+        logs/ablation_<rung>/seed_<s>/ and emit `by_anchor_ablation` keyed
+        on the rung name. This is the second-grid contract added when the
+        build-up ladder runner replaced the remove-one runner."""
+        from scripts.aggregate_learning_curves import aggregate
+        seeds = [0, 1, 2]
+        anchors = [1_000_000]
+        rung_names = ["mappo", "plus_ecbf", "full_hcmarl"]
+        with tempfile.TemporaryDirectory() as td:
+            # Write fake CSVs at logs/ablation_<rung>/seed_<s>/training_log.csv
+            for rung in rung_names:
+                for s in seeds:
+                    d = pathlib.Path(td) / f"ablation_{rung}" / f"seed_{s}"
+                    d.mkdir(parents=True, exist_ok=True)
+                    rows = [{
+                        "episode": 1,
+                        "global_step": anchors[0],
+                        "cumulative_reward": 50.0
+                                             + 10.0 * rung_names.index(rung)
+                                             + 0.001 * s,
+                    }]
+                    _write_csv(str(d / "training_log.csv"), rows)
+            matrix = {
+                "ablation": {
+                    "seeds": seeds,
+                    "rungs": [
+                        {"name": r, "config": "x", "method": "hcmarl"}
+                        for r in rung_names
+                    ],
+                },
+                "curve_anchors_steps": anchors,
+            }
+            matrix_path = pathlib.Path(td) / "matrix.yaml"
+            matrix_path.write_text(yaml.safe_dump(matrix), encoding="utf-8")
+            report = aggregate(str(matrix_path), td)
+            assert report["complete"] is True, report["errors"]
+            assert report["by_anchor"] == {}, "no headline grid was declared"
+            by = report["by_anchor_ablation"][str(anchors[0])]
+            assert set(by.keys()) == set(rung_names)
+            for stats in by.values():
+                assert stats["n_seeds"] == 3
+                assert stats["ci_lo"] <= stats["iqm"] <= stats["ci_hi"]
+
+
+class TestD3RunNameFlag:
+    """train.py exposes --run-name so ablation rungs land in
+    logs/ablation_<rung>/seed_<s>/ instead of overwriting the headline
+    logs at logs/<method>/seed_<s>/. The flag must round-trip through
+    argparse and resolve to the override (not the method) when set."""
+
+    def test_train_argparse_has_run_name(self):
+        """Parse train.py via importlib to confirm --run-name is accepted
+        without invoking the training loop."""
+        import importlib.util as _u
+        spec = _u.spec_from_file_location("train_cli", str(ROOT / "scripts" / "train.py"))
+        mod = _u.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        # METHODS dict is the canonical method registry; presence proves
+        # we loaded the module rather than something else.
+        assert hasattr(mod, "METHODS")
+        # Build the parser by re-reading the source — argparse is constructed
+        # only inside main(), so we string-check the flag declaration.
+        with open(ROOT / "scripts" / "train.py", encoding="utf-8") as f:
+            src = f.read()
+        assert '"--run-name"' in src or "'--run-name'" in src
+        # And the train() function signature must accept it (otherwise the
+        # CLI flag is dead).
+        import inspect
+        sig = inspect.signature(mod.train)
+        assert "run_name" in sig.parameters
 
 
 # ---------------------------------------------------------------------

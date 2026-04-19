@@ -5,17 +5,21 @@
 # the Gate D test read this file — if you add a new config or change the
 # seed count, change it HERE, not in ad-hoc shell scripts.
 #
-# Budget sanity (E2E Networks L4 @ INR 49/hr):
-#   headline:  4 methods x 10 seeds x ~30 min = 20 hr x INR 49 = INR ~980
-#   ablation:  5 configs x 5 seeds x ~30 min  = 12.5 hr x INR 49 = INR ~613
-#   totals under the INR 2,330 envelope from the Phase C strategy note.
+# Budget sanity (E2E Networks L4 @ INR 17/hr spot, 3M steps, ~1.5 hr/run):
+#   Plan A (expected, 1000-1500 sps):
+#     headline:  4 methods x 10 seeds x 1.5 hr = 60 hr x INR 20.06 = INR 1,204
+#     ablation:  5 rungs  x  5 seeds x 1.5 hr = 37.5 hr x INR 20.06 = INR 752
+#     overhead (preemption + reserve):                              INR 192
+#     total:                                                   INR ~2,148
+#   Hard ceiling: INR 2,500 (kill-switch at 95% = INR 2,375).
+#   Source: Claude Research Mode throughput audit 2026-04-17.
 
 # D1 — headline (HC-MARL vs baselines): 10 seeds each.
 # Seed list is literal — aggregation is strictly keyed on this list, so if
 # a run is missing its CSV the aggregator raises rather than silently
 # averaging over fewer seeds.
 headline:
-  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  seeds: [0, 1, 2, 3, 4]
   methods:
     hcmarl:    {config: config/hcmarl_full_config.yaml, method: hcmarl}
     mappo:     {config: config/mappo_config.yaml,        method: mappo}
@@ -42,7 +46,7 @@ ablation:
 # D3 — learning-curve anchor points (steps).
 # Every CSV must have a row with global_step >= each anchor. Aggregator
 # reports IQM + stratified bootstrap 95% CI at each anchor per method.
-curve_anchors_steps: [1000000, 3000000, 5000000]
+curve_anchors_steps: [500000, 1000000, 2000000, 3000000]
 
 # D4 — lazy-agent kill-switch parameters.
 # Per-agent task-selection entropy is logged every episode. If any agent's
