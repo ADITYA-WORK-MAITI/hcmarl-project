@@ -28,19 +28,34 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import multiprocessing
 import os
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import yaml
 
 
-def _run_one(cmd: List[str]) -> int:
+def _run_one(cmd: List[str], thread_cap: Optional[int] = None) -> int:
     """Worker body for ProcessPoolExecutor: run a single train.py subprocess
-    and return its exit code. Must be top-level (picklable) for fork/spawn."""
-    return subprocess.run(cmd).returncode
+    and return its exit code. Must be top-level (picklable) for fork/spawn.
+
+    If thread_cap is set, OMP/MKL/OPENBLAS env vars are passed to the child
+    BEFORE torch is imported there, capping its BLAS thread pool. This is
+    the T2-concurrency fix: torch defaults to one thread per vCPU (25 on L4),
+    so 4 parallel seeds x 25 threads = 100 threads on 25 cores, which
+    oversubscribes and regresses throughput by 25-30%. With thread_cap=6
+    (or total_cores // max_par), 4 parallel x 6 = 24 threads - no contention.
+    """
+    env = os.environ.copy()
+    if thread_cap and thread_cap > 0:
+        s = str(thread_cap)
+        env["OMP_NUM_THREADS"] = s
+        env["MKL_NUM_THREADS"] = s
+        env["OPENBLAS_NUM_THREADS"] = s
+    return subprocess.run(cmd, env=env).returncode
 
 # experiment_matrix.yaml lives next to this script's parent.
 DEFAULT_MATRIX = os.path.join(
@@ -82,6 +97,12 @@ def main() -> int:
                              "per-run mem << total (e.g. L4 at ~300 MiB/run leaves headroom "
                              "for 6-8 concurrent seeds). Stacks multiplicatively with T1 "
                              "(vectorised envs) on per-run SPS.")
+    parser.add_argument("--thread-cap", type=int, default=None,
+                        help="Max BLAS/OMP threads per child process. Defaults to "
+                             "total_vcpus // max_parallel (auto). Set to 0 to disable "
+                             "capping. Prevents torch's default-per-process thread pool "
+                             "(= vcpu count) from oversubscribing the host when running "
+                             "multiple concurrent seeds.")
     args = parser.parse_args()
 
     matrix = _load_matrix(args.matrix)
@@ -147,15 +168,32 @@ def main() -> int:
     failures: List[tuple] = []
     max_par = max(1, int(args.max_parallel))
 
+    # T2b thread-cap: torch defaults to one BLAS thread per vCPU. With
+    # max_par>1 that oversubscribes the host. Auto-cap at total_vcpus//max_par
+    # unless the user passed --thread-cap explicitly (0 disables).
+    if args.thread_cap is None:
+        try:
+            total_cores = multiprocessing.cpu_count()
+        except Exception:
+            total_cores = 0
+        auto_cap = (total_cores // max_par) if (total_cores > 0 and max_par > 1) else 0
+        thread_cap = auto_cap if auto_cap >= 1 else None
+    else:
+        thread_cap = args.thread_cap if args.thread_cap > 0 else None
+    if thread_cap and max_par > 1:
+        print(f"Thread cap per child: OMP/MKL/OPENBLAS_NUM_THREADS={thread_cap} "
+              f"(max_parallel={max_par})")
+
     if args.dry_run or max_par == 1:
         # Serial path — unchanged behaviour for backward-compat + dry-run preview.
+        # Serial runs don't need a thread cap (only one process competing).
         for run_id, method_key, seed, cmd, config_path in jobs:
             print(f"\n[{run_id}/{total}] {method_key} seed={seed}")
             print(f"  Config: {config_path}")
             print(f"  Command: {' '.join(cmd)}")
             if args.dry_run:
                 continue
-            rc = _run_one(cmd)
+            rc = _run_one(cmd, thread_cap=None)
             if rc != 0:
                 print(f"  FAILED (exit code {rc})")
                 failures.append((method_key, seed, rc))
@@ -170,7 +208,7 @@ def main() -> int:
               f"(concurrent train.py subprocesses)")
         with ProcessPoolExecutor(max_workers=max_par) as ex:
             fut2meta = {
-                ex.submit(_run_one, cmd): (run_id, method_key, seed, config_path)
+                ex.submit(_run_one, cmd, thread_cap): (run_id, method_key, seed, config_path)
                 for (run_id, method_key, seed, cmd, config_path) in jobs
             }
             for fut in as_completed(fut2meta):

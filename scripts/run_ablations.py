@@ -39,19 +39,31 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import multiprocessing
 import os
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import yaml
 
 
-def _run_one(cmd: List[str]) -> int:
+def _run_one(cmd: List[str], thread_cap: Optional[int] = None) -> int:
     """Worker body for ProcessPoolExecutor: run a single train.py subprocess
-    and return its exit code. Must be top-level (picklable) for fork/spawn."""
-    return subprocess.run(cmd).returncode
+    and return its exit code. Must be top-level (picklable) for fork/spawn.
+
+    thread_cap: if set, OMP/MKL/OPENBLAS env vars are passed to the child
+    before torch imports there. See scripts/run_baselines.py::_run_one for
+    the full rationale (T2b concurrency fix, 2026-04-20 VM measurement).
+    """
+    env = os.environ.copy()
+    if thread_cap and thread_cap > 0:
+        s = str(thread_cap)
+        env["OMP_NUM_THREADS"] = s
+        env["MKL_NUM_THREADS"] = s
+        env["OPENBLAS_NUM_THREADS"] = s
+    return subprocess.run(cmd, env=env).returncode
 
 DEFAULT_MATRIX = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -90,6 +102,11 @@ def main() -> int:
                              "backward-compatible). Raise to 4-8 on big-VRAM GPUs where "
                              "per-run mem << total. Stacks multiplicatively with T1 on "
                              "per-run SPS.")
+    parser.add_argument("--thread-cap", type=int, default=None,
+                        help="Max BLAS/OMP threads per child. Defaults to "
+                             "total_vcpus // max_parallel (auto). 0 disables. Prevents "
+                             "torch's vcpu-sized thread pool from oversubscribing when "
+                             "running multiple concurrent seeds.")
     args = parser.parse_args()
 
     matrix = _load_matrix(args.matrix)
@@ -153,6 +170,20 @@ def main() -> int:
     failures: List[tuple] = []
     max_par = max(1, int(args.max_parallel))
 
+    if args.thread_cap is None:
+        try:
+            total_cores = multiprocessing.cpu_count()
+        except Exception:
+            total_cores = 0
+        auto_cap = (total_cores // max_par) if (total_cores > 0 and max_par > 1) else 0
+        thread_cap = auto_cap if auto_cap >= 1 else None
+    else:
+        thread_cap = args.thread_cap if args.thread_cap > 0 else None
+
+    if thread_cap and max_par > 1:
+        print(f"Thread cap per child: OMP/MKL/OPENBLAS_NUM_THREADS={thread_cap} "
+              f"(max_parallel={max_par})")
+
     if args.dry_run or max_par == 1:
         for run_id, rung_name, seed, cmd, config_path in jobs:
             print(f"\n[{run_id}/{total}] {rung_name} seed={seed}")
@@ -160,7 +191,7 @@ def main() -> int:
             print(f"  Command: {' '.join(cmd)}")
             if args.dry_run:
                 continue
-            rc = _run_one(cmd)
+            rc = _run_one(cmd, thread_cap=None)
             if rc != 0:
                 print(f"  FAILED (exit code {rc})")
                 failures.append((rung_name, seed, rc))
@@ -171,7 +202,7 @@ def main() -> int:
               f"(concurrent train.py subprocesses)")
         with ProcessPoolExecutor(max_workers=max_par) as ex:
             fut2meta = {
-                ex.submit(_run_one, cmd): (run_id, rung_name, seed, config_path)
+                ex.submit(_run_one, cmd, thread_cap): (run_id, rung_name, seed, config_path)
                 for (run_id, rung_name, seed, cmd, config_path) in jobs
             }
             for fut in as_completed(fut2meta):
