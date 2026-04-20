@@ -260,19 +260,34 @@ class MAPPOLagrangian:
         return torch.cat([gs_tensor, one_hot])
 
     def get_actions(self, observations, global_state):
-        actions, log_probs, values, cost_values = {}, {}, {}, {}
-        gs = torch.FloatTensor(global_state).to(self.device)
+        # T1 throughput: stack all agent obs into a single (N, obs_dim) actor
+        # forward + single (N, global_dim+N) critic + cost_critic forward.
+        # See mappo.py::get_actions for the full rationale (EXP 5, 2026-04-20).
         sorted_agents = sorted(observations.keys())
+        N = len(sorted_agents)
+        obs_batch = torch.from_numpy(
+            np.stack([observations[a] for a in sorted_agents])
+        ).float().to(self.device)
+        gs_np = np.asarray(global_state, dtype=np.float32)
+        gs_tiled = np.broadcast_to(gs_np, (N, gs_np.shape[0])).copy()
+        # One-hot width = self.n_agents; see mappo.py::get_actions for why.
+        one_hot = np.eye(self.n_agents, dtype=np.float32)[:N]
+        gs_aug = np.concatenate([gs_tiled, one_hot], axis=1)
+        gs_aug_t = torch.from_numpy(gs_aug).to(self.device)
+        with torch.no_grad():
+            action_batch, lp_batch, _ = self.actor.get_action(obs_batch)
+            value_batch = self.critic(gs_aug_t)
+            cost_value_batch = self.cost_critic(gs_aug_t)
+        action_np = action_batch.cpu().numpy()
+        lp_np = lp_batch.cpu().numpy()
+        val_np = value_batch.cpu().numpy()
+        cval_np = cost_value_batch.cpu().numpy()
+        actions, log_probs, values, cost_values = {}, {}, {}, {}
         for i, agent_id in enumerate(sorted_agents):
-            obs_t = torch.FloatTensor(observations[agent_id]).to(self.device)
-            with torch.no_grad():
-                action, lp, _ = self.actor.get_action(obs_t)
-            actions[agent_id] = action.item()
-            log_probs[agent_id] = lp.item()
-            # C-9.A: per-agent values via augmented global state
-            gs_aug = self._augment_gs(gs, i)
-            values[agent_id] = self.critic(gs_aug).item()
-            cost_values[agent_id] = self.cost_critic(gs_aug).item()
+            actions[agent_id] = int(action_np[i])
+            log_probs[agent_id] = float(lp_np[i])
+            values[agent_id] = float(val_np[i])
+            cost_values[agent_id] = float(cval_np[i])
         return actions, log_probs, values, cost_values
 
     def update(self):
