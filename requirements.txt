@@ -19,6 +19,7 @@ pytest-cov>=4.1.0
 # Logging and visualization (used from Phase 2 onward)
 matplotlib>=3.7.0
 wandb>=0.16.0
+pandas>=2.0.0
 
 # RL framework (required for training, tests, and all agent code)
 # NOTE: On GPU hosts (CUDA), install torch from the CUDA wheel index BEFORE
