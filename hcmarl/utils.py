@@ -310,6 +310,11 @@ def seed_everything(seed: int, deterministic: bool = True) -> None:
     try:
         import torch
         torch.manual_seed(seed)
+        # TF32 matmul: on Ampere/Ada Tensor Cores ~1.5-2x on dense matmul at
+        # ~1e-3 relative precision loss. Deterministic within fixed hardware +
+        # seed, so bit-exact reproducibility on the same L4 is preserved. No-op
+        # on GPUs without Tensor Cores (Pascal/Volta) — safe to always enable.
+        torch.set_float32_matmul_precision("high")
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
             # M-1 rationale: deterministic=True ensures bit-exact reproducibility

@@ -42,9 +42,16 @@ import argparse
 import os
 import subprocess
 import sys
-from typing import Dict, List
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Dict, List, Tuple
 
 import yaml
+
+
+def _run_one(cmd: List[str]) -> int:
+    """Worker body for ProcessPoolExecutor: run a single train.py subprocess
+    and return its exit code. Must be top-level (picklable) for fork/spawn."""
+    return subprocess.run(cmd).returncode
 
 DEFAULT_MATRIX = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -78,6 +85,11 @@ def main() -> int:
                         help="GPU instance hourly rate in INR (default 49.0 on-demand, 17 spot).")
     parser.add_argument("--budget-margin", type=float, default=0.95,
                         help="Trip kill-switch at budget_inr * margin (default 0.95).")
+    parser.add_argument("--max-parallel", type=int, default=1,
+                        help="Max concurrent train.py subprocesses. Default 1 (serial, "
+                             "backward-compatible). Raise to 4-8 on big-VRAM GPUs where "
+                             "per-run mem << total. Stacks multiplicatively with T1 on "
+                             "per-run SPS.")
     args = parser.parse_args()
 
     matrix = _load_matrix(args.matrix)
@@ -111,7 +123,7 @@ def main() -> int:
     if args.dry_run:
         print("(dry-run mode — no subprocesses will be launched)\n")
 
-    failures: List[tuple] = []
+    jobs: List[Tuple[int, str, int, List[str], str]] = []
     for i, rung_name in enumerate(rung_names):
         spec = rungs_by_name[rung_name]
         config_path = spec["config"]
@@ -136,19 +148,45 @@ def main() -> int:
                 cmd += ["--budget-inr", str(args.budget_inr),
                         "--cost-per-hour", str(args.cost_per_hour),
                         "--budget-margin", str(args.budget_margin)]
+            jobs.append((run_id, rung_name, seed, cmd, config_path))
 
-            print(f"\n[{run_id}/{total}] {rung_name} (method={method_arg}) seed={seed}")
+    failures: List[tuple] = []
+    max_par = max(1, int(args.max_parallel))
+
+    if args.dry_run or max_par == 1:
+        for run_id, rung_name, seed, cmd, config_path in jobs:
+            print(f"\n[{run_id}/{total}] {rung_name} seed={seed}")
             print(f"  Config: {config_path}")
             print(f"  Command: {' '.join(cmd)}")
-
             if args.dry_run:
                 continue
-            result = subprocess.run(cmd)
-            if result.returncode != 0:
-                print(f"  FAILED (exit code {result.returncode})")
-                failures.append((rung_name, seed, result.returncode))
+            rc = _run_one(cmd)
+            if rc != 0:
+                print(f"  FAILED (exit code {rc})")
+                failures.append((rung_name, seed, rc))
             else:
                 print(f"  DONE")
+    else:
+        print(f"\nLaunching {len(jobs)} runs with --max-parallel={max_par} "
+              f"(concurrent train.py subprocesses)")
+        with ProcessPoolExecutor(max_workers=max_par) as ex:
+            fut2meta = {
+                ex.submit(_run_one, cmd): (run_id, rung_name, seed, config_path)
+                for (run_id, rung_name, seed, cmd, config_path) in jobs
+            }
+            for fut in as_completed(fut2meta):
+                run_id, rung_name, seed, config_path = fut2meta[fut]
+                try:
+                    rc = fut.result()
+                except Exception as exc:
+                    print(f"[{run_id}/{total}] {rung_name} seed={seed} CRASHED: {exc}")
+                    failures.append((rung_name, seed, -1))
+                    continue
+                if rc != 0:
+                    print(f"[{run_id}/{total}] {rung_name} seed={seed} FAILED (exit {rc})")
+                    failures.append((rung_name, seed, rc))
+                else:
+                    print(f"[{run_id}/{total}] {rung_name} seed={seed} DONE")
 
     print(f"\nAll {total} jobs {'would be ' if args.dry_run else ''}complete.")
     if failures:

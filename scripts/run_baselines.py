@@ -31,9 +31,16 @@ import argparse
 import os
 import subprocess
 import sys
-from typing import Dict, List
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Dict, List, Tuple
 
 import yaml
+
+
+def _run_one(cmd: List[str]) -> int:
+    """Worker body for ProcessPoolExecutor: run a single train.py subprocess
+    and return its exit code. Must be top-level (picklable) for fork/spawn."""
+    return subprocess.run(cmd).returncode
 
 # experiment_matrix.yaml lives next to this script's parent.
 DEFAULT_MATRIX = os.path.join(
@@ -69,6 +76,12 @@ def main() -> int:
                         help="GPU instance hourly rate in INR (default 49.0 on-demand, 17 spot).")
     parser.add_argument("--budget-margin", type=float, default=0.95,
                         help="Trip kill-switch at budget_inr * margin (default 0.95).")
+    parser.add_argument("--max-parallel", type=int, default=1,
+                        help="Max concurrent train.py subprocesses. Default 1 (serial, "
+                             "backward-compatible). Raise to 4-8 on big-VRAM GPUs where "
+                             "per-run mem << total (e.g. L4 at ~300 MiB/run leaves headroom "
+                             "for 6-8 concurrent seeds). Stacks multiplicatively with T1 "
+                             "(vectorised envs) on per-run SPS.")
     args = parser.parse_args()
 
     matrix = _load_matrix(args.matrix)
@@ -102,7 +115,9 @@ def main() -> int:
     if args.dry_run:
         print("(dry-run mode — no subprocesses will be launched)\n")
 
-    failures: List[tuple] = []
+    # Build the full job list up-front so we can feed it to the parallel pool
+    # (or iterate serially when --max-parallel=1).
+    jobs: List[Tuple[int, str, int, List[str], str]] = []
     for i, method_key in enumerate(method_keys):
         spec = methods_map[method_key]
         config_path = spec["config"]
@@ -127,19 +142,50 @@ def main() -> int:
                 cmd += ["--budget-inr", str(args.budget_inr),
                         "--cost-per-hour", str(args.cost_per_hour),
                         "--budget-margin", str(args.budget_margin)]
+            jobs.append((run_id, method_key, seed, cmd, config_path))
 
-            print(f"\n[{run_id}/{total}] {method_key} (method={method_arg}) seed={seed}")
+    failures: List[tuple] = []
+    max_par = max(1, int(args.max_parallel))
+
+    if args.dry_run or max_par == 1:
+        # Serial path — unchanged behaviour for backward-compat + dry-run preview.
+        for run_id, method_key, seed, cmd, config_path in jobs:
+            print(f"\n[{run_id}/{total}] {method_key} seed={seed}")
             print(f"  Config: {config_path}")
             print(f"  Command: {' '.join(cmd)}")
-
             if args.dry_run:
                 continue
-            result = subprocess.run(cmd)
-            if result.returncode != 0:
-                print(f"  FAILED (exit code {result.returncode})")
-                failures.append((method_key, seed, result.returncode))
+            rc = _run_one(cmd)
+            if rc != 0:
+                print(f"  FAILED (exit code {rc})")
+                failures.append((method_key, seed, rc))
             else:
                 print(f"  DONE")
+    else:
+        # Parallel path — T2. One ProcessPoolExecutor worker per concurrent run.
+        # Each worker invokes subprocess.run(train.py), so CUDA contexts are
+        # isolated per-subprocess (no shared-state issues). Stdout from the
+        # children interleaves on the pool's console; per-run CSVs stay clean.
+        print(f"\nLaunching {len(jobs)} runs with --max-parallel={max_par} "
+              f"(concurrent train.py subprocesses)")
+        with ProcessPoolExecutor(max_workers=max_par) as ex:
+            fut2meta = {
+                ex.submit(_run_one, cmd): (run_id, method_key, seed, config_path)
+                for (run_id, method_key, seed, cmd, config_path) in jobs
+            }
+            for fut in as_completed(fut2meta):
+                run_id, method_key, seed, config_path = fut2meta[fut]
+                try:
+                    rc = fut.result()
+                except Exception as exc:
+                    print(f"[{run_id}/{total}] {method_key} seed={seed} CRASHED: {exc}")
+                    failures.append((method_key, seed, -1))
+                    continue
+                if rc != 0:
+                    print(f"[{run_id}/{total}] {method_key} seed={seed} FAILED (exit {rc})")
+                    failures.append((method_key, seed, rc))
+                else:
+                    print(f"[{run_id}/{total}] {method_key} seed={seed} DONE")
 
     print(f"\nAll {total} jobs {'would be ' if args.dry_run else ''}complete.")
     if failures:
