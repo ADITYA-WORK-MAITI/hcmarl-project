@@ -6,15 +6,23 @@
 
 ## 0. What this runbook covers — and what it does NOT
 
+> **!!! HCMARL IS FORBIDDEN IN THIS SESSION !!!**
+>
+> HCMARL headline training is **already done**. Its 10 seeds are archived on the laptop at `logs/vm_archive_2026_04_21/repo_state/logs/hcmarl/`. Re-running HCMARL here would cost ~Rs 900 of L4 time for **zero** new data, and would overwrite ablation evidence.
+>
+> `scripts/run_baselines.py` **DEFAULT BEHAVIOUR** reads all four methods from `config/experiment_matrix.yaml` — including `hcmarl`. On 2026-04-21 01:31 IST, exactly this footgun fired: the launcher was invoked without `--methods` and started training `hcmarl seed 0` first. Caught within 16 minutes and killed; no contamination, but Rs ~50 wasted and user trust shredded.
+>
+> **STEP 8 in this runbook ALWAYS passes `--methods mappo ippo mappo_lag`. NEVER omit that flag. NEVER add `hcmarl` to the list. If the dry-run banner in STEP 6 CHECK 6 prints "4 methods" or mentions "hcmarl" anywhere, STOP and escalate.**
+
 **In scope (exclusively):**
 - Three baselines: `mappo`, `ippo`, `mappo_lag`
-- Five seeds each: 0, 1, 2, 3, 4
+- Ten seeds each: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9   → **30 total runs**
 - Config files: `config/mappo_config.yaml`, `config/ippo_config.yaml`, `config/mappo_lag_config.yaml`
-- Launcher: `scripts/run_baselines.py` with the new `--fresh-logs` flag
-- Logs target: `logs/{mappo,ippo,mappo_lag}/seed_*/training_log.csv`
+- Launcher: `scripts/run_baselines.py` with the new `--fresh-logs` flag AND `--methods mappo ippo mappo_lag` filter
+- Logs target: `logs/{mappo,ippo,mappo_lag}/seed_{0..9}/training_log.csv` (30 CSVs)
 
 **Out of scope (do NOT touch):**
-- HCMARL headline runs — they already completed; their CSVs and checkpoints are being archived separately. Do not re-run, do not re-train, do not delete.
+- HCMARL headline runs — already done, already archived. Do not re-run, do not re-train, do not delete. Running HCMARL again is an automatic STOP condition.
 - 500K probe, 1M watch, plateau checks — that was RUNBOOK.md. Not this session.
 - Ablation grid (`scripts/run_ablations.py`). Not this session.
 - Any edit to MMICRL, Path G, NSWF allocator, ECBF filter code. Not this session.
@@ -28,18 +36,25 @@ If in doubt, stop and ask. You are here to re-run three baselines cleanly. Nothi
 ```
 You are the VM-side Claude for the HC-MARL BASELINES-ONLY clean-slate re-run on
 an E2E L4 GPU node (2026-04-21). This paste IS your full starting instruction —
-no further instruction is coming for roughly the next 3-6 hours. Execute
-continuously.
+no further instruction is coming for roughly the next 15-20 hours (30 runs
+serial at ~1000 SPS, 2M steps per run, L4 on-demand). Execute continuously.
 
 Your complete briefing is at /root/hcmarl_project/RUNBOOK_BASELINES.md on this
 VM. Read every line of that file top to bottom. Do not skim, do not skip, do
 not summarise.
 
+!!! HCMARL IS FORBIDDEN !!!
+HCMARL headline training is DONE and archived. Re-running it is a hard STOP
+condition. `scripts/run_baselines.py` default behaviour includes hcmarl —
+STEP 8 ALWAYS passes `--methods mappo ippo mappo_lag` to exclude it. Never
+omit that flag. Never add hcmarl to it. If the dry-run banner at STEP 6
+CHECK 6 shows "4 methods" or mentions "hcmarl", STOP IMMEDIATELY.
+
 CRITICAL NON-NEGOTIABLE POINTS (if any of these is not true, STOP):
   1. You cloned the MOST RECENT push from
      github.com/ADITYA-WORK-MAITI/hcmarl-project (branch master). Confirm
      `git log -1 --format='%h %ci %s'` shows a commit dated on or after
-     2026-04-21 whose message contains the word "baseline".
+     2026-04-21 whose message contains both "baseline" and "10 seeds".
   2. ECBF is OFF in ALL THREE baseline configs. Grep prove it:
      `grep -E 'enabled:' config/{mappo,ippo,mappo_lag}_config.yaml`
      — every line must show `enabled: false`.
@@ -53,8 +68,21 @@ CRITICAL NON-NEGOTIABLE POINTS (if any of these is not true, STOP):
      are EMPTY on the VM. Either never existed (fresh clone) or will be
      wiped by `--fresh-logs` before the launcher spawns its first
      subprocess. NEVER append new data to a contaminated CSV.
+  5. `config/experiment_matrix.yaml` has `headline.seeds: [0, 1, 2, 3, 4,
+     5, 6, 7, 8, 9]` (ten seeds). Grep prove it:
+     `grep -A1 '^headline:' config/experiment_matrix.yaml | grep seeds`
+     — output must contain ten integers.
+  6. Dry-run banner verification (THIS IS THE HCMARL FOOTGUN GUARD):
+     `python scripts/run_baselines.py --methods mappo ippo mappo_lag \
+          --dry-run 2>&1 | head -5`
+     FIRST LINE must be exactly:
+     `Headline grid: 3 methods x 10 seeds = 30 runs`
+     SECOND LINE must be exactly:
+     `Methods: ['mappo', 'ippo', 'mappo_lag']`
+     If either line deviates (says 4 methods, says 15 runs, lists hcmarl),
+     STOP.
 
-If ANY of the 4 checks above fails, STOP, post the failing check, wait.
+If ANY of the 6 checks above fails, STOP, post the failing check, wait.
 
 After reading, execute STEPs 1-12 of RUNBOOK_BASELINES.md continuously, in
 order, without asking for confirmation between steps:
@@ -63,15 +91,18 @@ order, without asking for confirmation between steps:
   STEP 2   python3.12 venv at /root/hcmarl_project/venv
   STEP 3   pip install torch from cu124 (fall back to cu121)
   STEP 4   pip install -r requirements.txt
-  STEP 5   pytest -q   (pass criterion: 510 passed, 1 skipped, 0 failed)
-  STEP 6   the four non-negotiable pre-flight checks above (all 4 must pass)
+  STEP 5   pytest -q   (pass criterion: 0 failed; 3+ skips acceptable if
+           they are env-conditional like no-CUDA or no-matplotlib)
+  STEP 6   the SIX non-negotiable pre-flight checks above (all 6 must pass)
   STEP 7   create tmux session `baselines`
-  STEP 8   launch scripts/run_baselines.py with --fresh-logs (15 runs)
+  STEP 8   launch scripts/run_baselines.py with --fresh-logs AND
+           `--methods mappo ippo mappo_lag` (30 runs). The launch line is
+           fixed — do not reword, do not drop flags, do not add --resume.
   STEP 9   automated status report every 20 minutes while the tmux is alive
            (see §5 format). Do NOT wait to be asked.
-  STEP 10  when all 15 runs finish, post the final exit-summary table
+  STEP 10  when all 30 runs finish, post the final exit-summary table
            (§6 format).
-  STEP 11  verify every one of logs/{mappo,ippo,mappo_lag}/seed_{0..4}/
+  STEP 11  verify every one of logs/{mappo,ippo,mappo_lag}/seed_{0..9}/
            training_log.csv exists and is non-empty (§7 audit script).
   STEP 12  STOP. Do NOT destroy the node. Do NOT touch logs/hcmarl/. Wait
            for my next paste (§0.2).
@@ -81,17 +112,17 @@ package that requirements.txt should have pulled in, typo in an import, a
 logs/{method}/ directory that didn't get wiped, a stale .pyc), FIX IT IN
 PLACE with minimal edits and REPORT what you changed. You may not change
 hyperparameters, seed lists, total_steps, eval intervals, kill-switch
-thresholds, ECBF state, environment parameters, or anything under
-hcmarl/. If the fix exceeds those bounds, STOP and escalate.
+thresholds, ECBF state, environment parameters, anything under hcmarl/,
+or the methods filter. If the fix exceeds those bounds, STOP and escalate.
 
 Begin now. After reading RUNBOOK_BASELINES.md, reply with exactly:
-`Read. Four pre-flight checks begin at STEP 6.`
+`Read. Six pre-flight checks begin at STEP 6. HCMARL is forbidden.`
 and start.
 ```
 
 ---
 
-## 0.2 Close-out prompt (paste after all 15 CSVs are verified)
+## 0.2 Close-out prompt (paste after all 30 CSVs are verified)
 
 ```
 Baselines complete. Your work is done for this session.
@@ -114,7 +145,7 @@ and then wait.
 | Agent | Owns | Forbidden |
 |---|---|---|
 | **LOCAL** (laptop this-morning session) | scope decisions, git state, RUNBOOK edits, archive of the prior HCMARL run, plateau interpretation from HCMARL data | direct SSH execution on VM |
-| **VM** (Claude Code on the L4) | bootstrap, 4 pre-flight checks, tmux launch, monitoring, status reports, minor in-place fixes within §8 bounds, final CSV audit | scope decisions, destroying the node, editing tracked `.py` / config files beyond §8, `git commit` / `git push`, anything involving HCMARL data, running ablations |
+| **VM** (Claude Code on the L4) | bootstrap, 6 pre-flight checks, tmux launch, monitoring, status reports, minor in-place fixes within §8 bounds, final CSV audit | scope decisions, destroying the node, editing tracked `.py` / config files beyond §8, `git commit` / `git push`, anything involving HCMARL data, running ablations, dropping the `--methods` filter |
 | **USER** (Aditya) | E2E dashboard, SSH, `git clone` before claude launches, paste between sessions, scp pull, destroy node after audit passes | running training outside tmux, destroying before scp, editing files on VM directly (ask LOCAL) |
 
 ---
@@ -130,14 +161,16 @@ and then wait.
 
 - Baseline logs/ dirs on the laptop are already empty. Baseline checkpoints/ dirs carry stale `.pt` files from the 2026-04-20 contaminated run — the VM's fresh clone will not have these, so no cleanup needed there for the VM.
 
-- Test suite is **510 passed, 1 skipped, 0 failed** on laptop. Must match on VM at STEP 5.
+- Test suite is **0 failed** on laptop (510 passed, 1 skipped). VM pytest on 2026-04-21 01:29 IST reported 509 passed / 3 skipped / 0 failed — the skip-count drifts by environment (CUDA visibility, matplotlib backend). Pass criterion at STEP 5 is **`0 failed`**, not an exact pass count.
 
-- Budget: Rs ~1,600 available on E2E (user topped up Rs 500 on Rs 1,100). With `--fresh-logs` and ~500-900 SPS on L4, expected wall-clock:
-  - 3 methods x 5 seeds x 2,000,000 steps x ~0.002s/step = ~16-20 hr serial
-  - ~Rs 57.82/hr (Rs 49 on-demand + 18% GST) x 20 hr = ~Rs 1,156
-  - Budget headroom: ~Rs 444 for re-runs / overhead
-  - With `--max-parallel=3` (one concurrent seed per method): ~5-7 hr wall-clock, ~Rs 400 (LOCAL decides whether to parallel, see §4)
-  - **If spend passes Rs 1,500 stop and escalate.**
+- Budget reality with 10 seeds (THIS IS A KNOWN OVERSHOOT of the Rs 1,600 on-hand credit — user is aware and will top up before running):
+  - 3 methods x 10 seeds x 2,000,000 steps x ~0.002s/step ≈ 30-45 hr serial
+  - Rs ~57.82/hr (Rs 49 on-demand + 18% GST) x 40 hr ≈ **Rs 2,313 serial**
+  - With `--max-parallel=3` (one concurrent seed per method, L4 has 23 GiB VRAM and per-run mem ≈ 300 MiB, so 3-way is safe):
+    - wall-clock ≈ 10-15 hr, spend ≈ **Rs 580-870**
+    - **This is the recommended mode for 10 seeds.** STEP 8 uses it.
+  - Per-run `--budget-inr 1500` kill-switch is a belt-and-braces guard on individual runs (a single seed will never legitimately consume 1500 of wall-clock credit). It is NOT a total-budget cap.
+  - **If the total E2E dashboard spend passes Rs 2,200 stop and escalate.**
 
 ---
 
@@ -223,11 +256,11 @@ Verify torch version contains `+cu124` (or `+cu121`). If pip swapped it for the 
 pytest -q 2>&1 | tail -5
 ```
 
-Pass criteria: **`510 passed, 1 skipped, 0 failed`** exactly. One harmless CVXPY warning from `ecbf_filter.py:325` about "Solution may be inaccurate" is expected on `test_stress_2x_still_holds` and does not count as failure.
+Pass criterion: **`0 failed`**. Skips are acceptable (typically 1-3 depending on CUDA / matplotlib / display-backend availability on the VM). One harmless CVXPY warning from `ecbf_filter.py:325` about "Solution may be inaccurate" is expected on `test_stress_2x_still_holds` and does not count as failure.
 
 If any test fails, STOP. Paste the last 30 lines to the user.
 
-### STEP 6 — [VM] The four non-negotiable pre-flight checks
+### STEP 6 — [VM] The SIX non-negotiable pre-flight checks
 
 This is the quality gate. Every one of these must pass. Run them as a single block and post the output to the user.
 
@@ -264,42 +297,88 @@ for m in mappo ippo mappo_lag; do
   done
 done
 echo
-echo "All four checks complete."
+echo "=== CHECK 5: experiment_matrix has ten seeds ==="
+python - <<'PY'
+import yaml
+m = yaml.safe_load(open("config/experiment_matrix.yaml"))
+seeds = m["headline"]["seeds"]
+assert seeds == [0,1,2,3,4,5,6,7,8,9], f"expected 10 seeds [0..9], got {seeds}"
+print(f"  headline.seeds = {seeds}  (count={len(seeds)})  OK")
+PY
+echo
+echo "=== CHECK 6: dry-run banner (HCMARL footgun guard) ==="
+python scripts/run_baselines.py --methods mappo ippo mappo_lag --dry-run 2>&1 | head -5
+python - <<'PY'
+import subprocess, sys
+out = subprocess.check_output(
+    [sys.executable, "scripts/run_baselines.py",
+     "--methods", "mappo", "ippo", "mappo_lag", "--dry-run"],
+    text=True).splitlines()
+want1 = "Headline grid: 3 methods x 10 seeds = 30 runs"
+want2 = "Methods: ['mappo', 'ippo', 'mappo_lag']"
+assert out[0] == want1, f"BANNER LINE 1 WRONG:\n  got:  {out[0]}\n  want: {want1}"
+assert out[1] == want2, f"BANNER LINE 2 WRONG:\n  got:  {out[1]}\n  want: {want2}"
+assert "hcmarl" not in " ".join(out).lower() or "hcmarl_project" in " ".join(out).lower(), \
+    "banner mentions hcmarl — scope violation"
+print("  dry-run banner matches spec  OK")
+PY
+echo
+echo "All six checks complete."
 ```
 
 Expected outcome on a fresh VM clone:
-- CHECK 1 — commit hash with "baseline" in the subject, dated 2026-04-21 or later.
+- CHECK 1 — commit hash with both "baseline" and "10 seeds" in the subject, dated 2026-04-21 or later.
 - CHECK 2 — three lines each `enabled: false`.
 - CHECK 3 — every muscle_groups / theta_max / tasks prints `6 entries` or similar, no assertion errors.
 - CHECK 4 — six `clean:` lines (fresh clone has no `logs/` or `checkpoints/` subdirs at all). If any is NON-EMPTY, `--fresh-logs` in STEP 8 will handle it, but flag it in the status report.
+- CHECK 5 — `headline.seeds = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]  (count=10)  OK`.
+- CHECK 6 — banner prints `3 methods x 10 seeds = 30 runs` with `['mappo', 'ippo', 'mappo_lag']`, Python assertion prints `OK`.
 
 **If any check fails, STOP. Post the full output. Do not proceed to STEP 7.**
 
 ### STEP 7 — [VM] Create tmux session
 
+Idempotent — kills any stale `baselines` session from a prior aborted attempt before creating a fresh one.
+
 ```bash
+tmux kill-session -t baselines 2>/dev/null || true
+pkill -f "scripts/train.py" 2>/dev/null || true
+pkill -f "run_baselines.py" 2>/dev/null || true
+sleep 1
 tmux new -d -s baselines
 tmux send-keys -t baselines "cd /root/hcmarl_project && source venv/bin/activate" Enter
+sleep 1
+tmux list-sessions | grep baselines   # must print the baselines row
 ```
 
 ### STEP 8 — [VM] Launch the grid
 
-This is the single command that runs 15 baseline seeds (3 methods x 5 seeds).
+This is the single command that runs 30 baseline seeds (3 methods x 10 seeds) with 3-way parallelism.
 
 ```bash
-tmux send-keys -t baselines "python scripts/run_baselines.py --device cuda --fresh-logs --budget-inr 1500 --cost-per-hour 49.0 2>&1 | tee logs/baselines_run.log" Enter
+tmux send-keys -t baselines "python scripts/run_baselines.py --methods mappo ippo mappo_lag --device cuda --fresh-logs --max-parallel 3 --budget-inr 1500 --cost-per-hour 49.0 2>&1 | tee logs/baselines_run.log" Enter
 ```
 
+Within 30 seconds of kickoff, `tmux capture-pane -t baselines -p | tail -20` must show the banner:
+```
+Headline grid: 3 methods x 10 seeds = 30 runs
+Methods: ['mappo', 'ippo', 'mappo_lag']
+Seeds:   [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+```
+If the banner says **4 methods, 15 runs, or mentions hcmarl anywhere**: IMMEDIATELY `Ctrl-C` (send-keys `C-c`), `pkill -f run_baselines.py`, and STOP. Do not resume without LOCAL.
+
 **Flags explained — do not improvise:**
+- `--methods mappo ippo mappo_lag` — **NON-NEGOTIABLE HCMARL GUARD**. Without this, `run_baselines.py` pulls every method from `experiment_matrix.yaml` — which includes `hcmarl`. Re-running HCMARL here is a hard STOP condition (costs ~Rs 900 and overwrites nothing we need).
 - `--device cuda` — L4 GPU required.
 - `--fresh-logs` — NON-NEGOTIABLE. Wipes `logs/{mappo,ippo,mappo_lag}/` and `checkpoints/{mappo,ippo,mappo_lag}/` before launching. This is the physical guarantee against appending new good rows onto contaminated rows. Without this flag, STOP.
+- `--max-parallel 3` — runs one concurrent seed per method (mappo + ippo + mappo_lag simultaneously). L4 has 23 GiB VRAM; per-run memory ≈ 300 MiB; 3-way is comfortably under the ceiling. The launcher auto-sets OMP/MKL/OPENBLAS thread caps at total_vcpus/3 so there is no CPU oversubscription. Cuts 30-seed wall-clock from ~40 hr (serial) to ~13 hr (3-way parallel). With 10 seeds per method this is the recommended mode; do not drop it without LOCAL approval.
 - `--budget-inr 1500` — per-run kill-switch at Rs 1,500 * 0.95 = Rs 1,425 wall-clock spend. Per-run, not total — so the whole grid will never hit it in practice, but it's here as a belt-and-braces safety on individual runs.
 - `--cost-per-hour 49.0` — E2E L4 on-demand.
 - `tee logs/baselines_run.log` — mirror launcher stdout so the status report can read progress without `tmux capture-pane`.
 
-Do NOT add `--max-parallel` without LOCAL approval (parallel seeds share the L4, contention may distort SPS — serial is the safe default).
 Do NOT add `--resume` — this is a clean-slate grid.
-Do NOT alter the seed list or method list — `run_baselines.py` reads them from `config/experiment_matrix.yaml`.
+Do NOT drop `--methods mappo ippo mappo_lag` — dropping it re-introduces the hcmarl footgun.
+Do NOT alter the seed list or add `--seeds` — `run_baselines.py` reads the ten seeds from `config/experiment_matrix.yaml` (checked at STEP 6 CHECK 5).
 
 ### STEP 9 — [VM] Automated status reports (every 20 minutes)
 
@@ -310,7 +389,7 @@ Status report format:
 ```
 ### Status report — <UTC HH:MM> (elapsed: <Hh:MMm> since STEP 8 kickoff)
 
-Runs done / in-flight / pending:   <n_done>/<n_inflight>/<n_pending>  (of 15)
+Runs done / in-flight / pending:   <n_done>/<n_inflight>/<n_pending>  (of 30)
 Current run:                       <method>_seed_<s>  (<current_global_step> / 2,000,000)
 Current SPS (rolling 50 ep):       <sps>
 ETA to grid completion (serial):   ~<Hh:MMm>
@@ -328,7 +407,7 @@ Commands to compute the fields:
 ```bash
 # n_done (CSV exists AND has >=2 non-header lines)
 for m in mappo ippo mappo_lag; do
-  for s in 0 1 2 3 4; do
+  for s in 0 1 2 3 4 5 6 7 8 9; do
     f=logs/$m/seed_$s/training_log.csv
     [ -f "$f" ] && [ "$(wc -l <"$f")" -ge 2 ] && echo "$m seed_$s"
   done
@@ -357,16 +436,17 @@ If you cannot derive a field, write `<unknown>` and explain. Never fabricate.
 
 ### STEP 10 — [VM] Final exit summary
 
-When `scripts/run_baselines.py` prints `All 15 jobs complete.` (or fails), post this block:
+When `scripts/run_baselines.py` prints `All 30 jobs complete.` (or fails), post this block:
 
 ```
 ### Grid done — <UTC HH:MM> (total wall-clock: <Hh:MMm>)
 
-| Method    | seed 0 | seed 1 | seed 2 | seed 3 | seed 4 | best_reward range |
-|-----------|--------|--------|--------|--------|--------|-------------------|
-| mappo     | DONE/FAIL | ... | ... | ... | ... | <min>..<max>      |
-| ippo      | ...    | ...    | ...    | ...    | ...    | <min>..<max>      |
-| mappo_lag | ...    | ...    | ...    | ...    | ...    | <min>..<max>      |
+| Method    | s0 | s1 | s2 | s3 | s4 | s5 | s6 | s7 | s8 | s9 | best_reward range |
+|-----------|----|----|----|----|----|----|----|----|----|----|-------------------|
+| mappo     | D/F| .. | .. | .. | .. | .. | .. | .. | .. | .. | <min>..<max>      |
+| ippo      | .. | .. | .. | .. | .. | .. | .. | .. | .. | .. | <min>..<max>      |
+| mappo_lag | .. | .. | .. | .. | .. | .. | .. | .. | .. | .. | <min>..<max>      |
+(cells: D=DONE, F=FAIL, L=lazy-trip, B=budget-trip)
 
 Kill-switch events:
   lazy_agent trips: <count>  (list: <method>_seed_<s>, ...)
@@ -375,7 +455,7 @@ Kill-switch events:
 Failures (run_baselines.py exit code != 0 subs):
   <list from the stdout FAILED lines, or "none">
 
-Total spend: Rs ~<amount>   (budget: Rs 1,500)
+Total spend: Rs ~<amount>   (per-run budget: Rs 1,500; user hard-cap: Rs 2,200)
 ```
 
 Use this Python block to gather best_reward per seed:
@@ -383,7 +463,7 @@ Use this Python block to gather best_reward per seed:
 python - <<'PY'
 import json, os
 for m in ("mappo","ippo","mappo_lag"):
-    for s in range(5):
+    for s in range(10):
         p = f"logs/{m}/seed_{s}/summary.json"
         if os.path.exists(p):
             d = json.load(open(p))
@@ -395,14 +475,14 @@ PY
 
 ### STEP 11 — [VM] CSV audit (must pass before standing down)
 
-Every one of the 15 CSVs must exist and have `global_step` columns reaching at least 1,000,000 (half of total_steps = 2M). Anything less indicates an aborted run that must be re-launched.
+Every one of the 30 CSVs must exist and have `global_step` columns reaching at least 1,000,000 (half of total_steps = 2M). Anything less indicates an aborted run that must be re-launched.
 
 ```bash
 python - <<'PY'
 import csv, os, sys
 missing, short, ok = [], [], []
 for m in ("mappo","ippo","mappo_lag"):
-    for s in range(5):
+    for s in range(10):
         p = f"logs/{m}/seed_{s}/training_log.csv"
         if not os.path.exists(p):
             missing.append(p); continue
@@ -442,7 +522,7 @@ Then wait. Do not launch anything else.
 Every **20 minutes** after STEP 8 kickoff. No exceptions. The user will sleep while the grid runs — if you go silent for 40 minutes they have no way to know whether the job is healthy, stalled, or has tripped. The cadence is the observability guarantee.
 
 Additionally, post *immediately* (do not wait for the 20-minute tick) when:
-- A run finishes (any of the 15).
+- A run finishes (any of the 30).
 - A `lazy-agent kill-switch` line appears in the log.
 - A `budget kill-switch` line appears in the log.
 - `run_baselines.py` reports a `FAILED (exit code X)` line.
@@ -492,7 +572,7 @@ On the VM after successful clone + setup:
 │   ├── mappo_config.yaml         # environment: + ecbf.enabled=false + kp=1.0
 │   ├── ippo_config.yaml          # same
 │   ├── mappo_lag_config.yaml     # same + algorithm.cost_limit etc.
-│   └── experiment_matrix.yaml    # seeds: [0,1,2,3,4]; headline.methods
+│   └── experiment_matrix.yaml    # seeds: [0..9] (ten); headline.methods (STEP 8 filters to 3 baselines)
 ├── scripts/
 │   ├── train.py                  # fail-fast env-section guard (new today)
 │   └── run_baselines.py          # --fresh-logs flag (new today)
@@ -554,7 +634,7 @@ STOP. Post the full context. Wait for LOCAL. The 20-minute cadence means the use
 - [ ] Final grid summary (§6 format) posted by VM
 - [ ] CSV audit passed (STEP 11 `audit exit=0`)
 - [ ] `scp -r -i ~/.ssh/id_ed25519 root@<IP>:/root/hcmarl_project/logs/{mappo,ippo,mappo_lag} /c/Users/admin/Desktop/hcmarl_project/logs/`
-- [ ] `ls /c/Users/admin/Desktop/hcmarl_project/logs/mappo/seed_*/training_log.csv` returns 5 non-empty paths on the laptop; same for ippo, mappo_lag
+- [ ] `ls /c/Users/admin/Desktop/hcmarl_project/logs/mappo/seed_*/training_log.csv` returns 10 non-empty paths on the laptop; same for ippo, mappo_lag
 - [ ] §0.2 close-out paste sent, VM acknowledged
 - [ ] E2E node destroyed in dashboard
 - [ ] E2E billing shows node charge stopped

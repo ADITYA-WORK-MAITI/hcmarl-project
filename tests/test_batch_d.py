@@ -53,15 +53,14 @@ class TestD1ExperimentMatrix:
     read it literally. A drift between this file and the runbook is a
     silent mis-report, so we pin its structure."""
 
-    def test_headline_declares_five_seeds(self):
-        # Scope locked at 5 seeds on 2026-04-18 (compute-bound: 4 methods x 5
-        # seeds x 3M steps ~ 30 hr, fits a single overnight VM session). If
-        # the matrix is ever bumped back to 10, update both the seed list
-        # in config/experiment_matrix.yaml and the asserts below.
+    def test_headline_declares_ten_seeds(self):
+        # Scope restored to 10 seeds on 2026-04-21 after the 2026-04-20 baseline
+        # contamination incident forced a clean-slate re-run (HCMARL 10 seeds
+        # already archived; baselines re-run at 10 seeds for parity).
         data = yaml.safe_load(MATRIX_PATH.read_text(encoding="utf-8"))
         seeds = data["headline"]["seeds"]
-        assert len(seeds) == 5
-        assert seeds == list(range(5))
+        assert len(seeds) == 10
+        assert seeds == list(range(10))
 
     def test_headline_methods_cover_all_four(self):
         data = yaml.safe_load(MATRIX_PATH.read_text(encoding="utf-8"))
