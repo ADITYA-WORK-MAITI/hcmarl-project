@@ -65,5 +65,9 @@ algorithm:
 
 # Baseline: ECBF safety filter MUST be disabled.
 # train.py defaults ecbf_mode="on" unless this key is explicitly false.
+# kp is irrelevant when enabled=false but the config audit test
+# (tests/test_round8_s4.py::test_all_configs_have_kp) requires it on
+# every ecbf block. 1.0 matches config/hcmarl_full_config.yaml.
 ecbf:
   enabled: false
+  kp: 1.0

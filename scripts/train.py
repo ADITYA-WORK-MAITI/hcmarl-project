@@ -910,6 +910,25 @@ def main():
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
+    # Fail-fast: baseline configs MUST carry an environment block with
+    # muscle_groups, theta_max, and tasks. Without these, safety_cost()
+    # silently returns 0 for every step and the baseline trains in a
+    # constraint-free world (root cause of the 2026-04-20 contaminated
+    # baseline runs). Guard applies to every method — hcmarl relies on
+    # the same floors when MMICRL is skipped or MI collapses.
+    _env = cfg.get("environment", {}) or {}
+    _missing = [k for k in ("muscle_groups", "theta_max", "tasks")
+                if not (_env.get(k) or {})]
+    if _missing:
+        raise ValueError(
+            f"{args.config}: environment section is missing or empty for "
+            f"keys {_missing}. This would make safety_cost() return 0 for "
+            f"every step and train the policy in a constraint-free env. "
+            f"Populate environment.muscle_groups, environment.theta_max, "
+            f"and environment.tasks to match config/hcmarl_full_config.yaml "
+            f"before launching."
+        )
+
     # Device
     if args.device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"

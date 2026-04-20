@@ -30,12 +30,16 @@ from __future__ import annotations
 import argparse
 import multiprocessing
 import os
+import shutil
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple
 
 import yaml
+
+# Repo root — used to resolve logs/ and checkpoints/ under --fresh-logs.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _run_one(cmd: List[str], thread_cap: Optional[int] = None) -> int:
@@ -97,6 +101,14 @@ def main() -> int:
                              "per-run mem << total (e.g. L4 at ~300 MiB/run leaves headroom "
                              "for 6-8 concurrent seeds). Stacks multiplicatively with T1 "
                              "(vectorised envs) on per-run SPS.")
+    parser.add_argument("--fresh-logs", action="store_true",
+                        help="Before any subprocess is launched, rm -rf "
+                             "logs/<method_key>/ and checkpoints/<method_key>/ "
+                             "for every method in the grid. Guarantees a "
+                             "clean-slate CSV — prevents the 'append new good "
+                             "rows onto contaminated rows' pathology seen on "
+                             "2026-04-20. Required for any re-run of a grid "
+                             "whose logs or checkpoints already exist.")
     parser.add_argument("--thread-cap", type=int, default=None,
                         help="Max BLAS/OMP threads per child process. Defaults to "
                              "total_vcpus // max_parallel (auto). Set to 0 to disable "
@@ -135,6 +147,23 @@ def main() -> int:
         print(f"Drive backup: {args.drive_backup_dir}")
     if args.dry_run:
         print("(dry-run mode — no subprocesses will be launched)\n")
+
+    # --fresh-logs: wipe per-method logs/ and checkpoints/ BEFORE any
+    # subprocess is launched. HCMARLLogger appends to a CSV whose header
+    # matches the expected schema; re-running a seed without wiping
+    # concatenates new good rows onto prior contaminated rows. Skipped
+    # in --dry-run so it stays safe to preview commands.
+    if args.fresh_logs and not args.dry_run:
+        print("--fresh-logs: wiping prior per-method logs/ and checkpoints/")
+        for mk in method_keys:
+            for subdir in ("logs", "checkpoints"):
+                target = os.path.join(_REPO_ROOT, subdir, mk)
+                if os.path.isdir(target):
+                    shutil.rmtree(target)
+                    print(f"  removed {subdir}/{mk}/")
+                else:
+                    print(f"  (nothing to remove at {subdir}/{mk}/)")
+        print("")
 
     # Build the full job list up-front so we can feed it to the parallel pool
     # (or iterate serially when --max-parallel=1).
