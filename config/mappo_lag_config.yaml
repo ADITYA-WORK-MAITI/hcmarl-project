@@ -29,4 +29,7 @@ algorithm:
   lambda_lr: 0.005
   lambda_init: 0.5
 
-
+# Baseline: ECBF safety filter MUST be disabled.
+# train.py defaults ecbf_mode="on" unless this key is explicitly false.
+ecbf:
+  enabled: false

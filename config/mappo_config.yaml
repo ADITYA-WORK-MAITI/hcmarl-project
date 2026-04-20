@@ -21,5 +21,7 @@ algorithm:
   hidden_dim: 64
   critic_hidden_dim: 128
 
-
-
+# Baseline: ECBF safety filter MUST be disabled.
+# train.py defaults ecbf_mode="on" unless this key is explicitly false.
+ecbf:
+  enabled: false
