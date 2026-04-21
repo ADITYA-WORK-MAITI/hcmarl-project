@@ -78,8 +78,8 @@ rows = [
      "#B8860B"),
     (125, 65,
      "2. 3CC-r Calibration (Path G)   §3.5 · Eq.(6)\nGrid-search (F,R) per subject vs ET_obs\n"
-     "Shoulder 0.0146/0.00058 · Ankle 0.00589/0.0182 · Knee 0.0150/0.00175\n"
-     "Elbow 0.00912/0.00094 · Trunk 0.00657/0.00354 · Grip 0.00794/0.00109  (r=15; grip r=30)",
+     "Shoulder 0.01820/0.00168 · Ankle 0.00589/0.00058 · Knee 0.01500/0.00149\n"
+     "Elbow 0.00912/0.00094 · Trunk 0.00755/0.00075 · Grip 0.00980/0.00064  (r=15; grip r=30)",
      "#B8860B"),
     (200, 55,
      "3. MMICRL · Multi-Modal Inverse Constrained RL   §4 · Eq.(9)–(11)\n"

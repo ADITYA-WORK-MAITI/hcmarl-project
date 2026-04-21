@@ -247,7 +247,7 @@ class TestC3ECBFBarrierIntegrity:
         filter can only react after the barrier is breached."""
         params = ECBFParams(theta_max=0.70, alpha1=0.05,
                             alpha2=0.05, alpha3=0.1)
-        # Shoulder F=0.0146: alpha1=0.05 >> F so the barrier correction
+        # Shoulder F=0.01820: alpha1=0.05 > F so the barrier correction
         # term in psi_1 dominates the fatigue drift — filter is responsive.
         assert params.alpha1 > SHOULDER.F
         assert params.alpha2 > SHOULDER.F

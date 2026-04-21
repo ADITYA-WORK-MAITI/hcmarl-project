@@ -18,7 +18,7 @@ def gen_test_three_cc_r():
         lines="462", imports_desc="pytest, numpy, hcmarl.three_cc_r.*")
 
     fb.make_node("cls_params", "TestMuscleParams (10 tests)", CLS, [
-        ("test_shoulder_raw_values", "F=0.0146, R=0.00058, r=15 from Table 1"),
+        ("test_shoulder_raw_values", "F=0.01820, R=0.00168, r=15 from Table 1"),
         ("test_ankle/knee/elbow", "verify raw F, R, r per muscle"),
         ("test_C_max, delta_max", "derived quantities: F*R/(F+R), R/(F+R)"),
         ("test_Rr, theta_min_max", "R*r, F/(F+R*r)"),
@@ -63,7 +63,7 @@ def gen_test_three_cc_r():
     fb.dangling_in("cls_ode", "ThreeCCr, ThreeCCrState", "three_cc_r.py")
     fb.dangling_in("cls_steady", "MuscleParams.C_max, delta_max", "three_cc_r.py")
 
-    fb.add_legend_entry("SHOULDER, ANKLE, KNEE, ELBOW, TRUNK, GRIP", "MuscleParams instances from Table 1", "SHOULDER.F=0.0146")
+    fb.add_legend_entry("SHOULDER, ANKLE, KNEE, ELBOW, TRUNK, GRIP", "MuscleParams instances from Table 1", "SHOULDER.F=0.01820")
     fb.add_legend_entry("ThreeCCr, ThreeCCrState", "ODE solver class + state dataclass", "ThreeCCr(SHOULDER)")
     fb.add_legend_entry("MuscleParams.C_max, delta_max", "derived properties used in steady-state tests", "C_max=0.000558, delta_max=0.038")
     fb.render(OUT)
@@ -197,7 +197,7 @@ def gen_test_pipeline():
     fb.add_legend_entry("TaskProfile", "task demand profile object passed to pipeline tests", "TaskProfile(id=1, demands={'shoulder':0.4})")
     fb.add_legend_entry("WorkerState", "worker state object passed to pipeline tests", "WorkerState.fresh(0, ['shoulder'])")
     fb.add_legend_entry("HCMARLPipeline, ECBFParams, NSWFParams", "pipeline + config objects under test", "HCMARLPipeline(num_workers=4)")
-    fb.add_legend_entry("SHOULDER, ELBOW, GRIP", "MuscleParams used to build pipeline", "SHOULDER.F=0.0146")
+    fb.add_legend_entry("SHOULDER, ELBOW, GRIP", "MuscleParams used to build pipeline", "SHOULDER.F=0.01820")
     fb.render(OUT)
 
 
@@ -305,12 +305,12 @@ def gen_test_real_data_calib():
     fb.dangling_in("cls_wsd", "WSD4FEDSRM dataset", "data/wsd4fedsrm/")
     fb.dangling_out("cls_demo", "DemonstrationCollector", "mmicrl.py")
 
-    fb.add_legend_entry("predict_endurance_time", "function computing ODE-based exhaustion time", "predict_endurance_time(F=0.0146, TL=0.35) -> 105s")
+    fb.add_legend_entry("predict_endurance_time", "function computing ODE-based exhaustion time", "predict_endurance_time(F=0.01820, TL=0.35) -> 105s")
     fb.add_legend_entry("F_opt", "calibrated fatigue rate from grid search", "1.24 min^-1")
     fb.add_legend_entry("(F_i, R_i) pairs", "sampled fatigue/recovery rate pairs per subject", "[(0.013, 0.0006), ...]")
     fb.add_legend_entry("demo_trajectories", "generated demo trajectories for MMICRL input", "list of (state, action) sequences")
     fb.add_legend_entry("predict_endurance_time, SHOULDER", "endurance function + shoulder MuscleParams", "predict_endurance_time(SHOULDER.F, ...)")
-    fb.add_legend_entry("POPULATION_FR, POPULATION_CV_F", "population-level F,R means and coefficients of variation", "F_pop=0.0146, CV_F=0.30")
+    fb.add_legend_entry("POPULATION_FR, POPULATION_CV_F", "population-level F,R means and coefficients of variation", "F_pop=0.01820, CV_F=0.30")
     fb.add_legend_entry("WSD4FEDSRM dataset", "1.6 GB shoulder fatigue dataset (34 subjects)", "data/wsd4fedsrm/WSD4FEDSRM/")
     fb.add_legend_entry("DemonstrationCollector", "collector object with loaded demos for MMICRL", "DemonstrationCollector(n_muscles=3)")
     fb.render(OUT)

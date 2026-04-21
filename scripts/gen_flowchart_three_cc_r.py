@@ -51,8 +51,8 @@ make_node("file_hdr", "hcmarl/three_cc_r.py", HDR, [
 # ═══════════════════════════════════════════════════════════════
 make_node("MuscleParams", "@dataclass MuscleParams (frozen)", CLS, [
     ("name: str", "'shoulder'"),
-    ("F: float", "0.0146 (fatigue rate, min^-1)"),
-    ("R: float", "0.00058 (recovery rate, min^-1)"),
+    ("F: float", "0.01820 (fatigue rate, min^-1)"),
+    ("R: float", "0.00168 (recovery rate, min^-1)"),
     ("r: float", "15 (reperfusion multiplier)"),
 ])
 
@@ -68,12 +68,12 @@ make_node("MuscleParams_props", "MuscleParams @properties", PROP, [
 # Module-level constants
 # ═══════════════════════════════════════════════════════════════
 make_node("constants", "Module Constants (Table 1)", CONST, [
-    ("SHOULDER", "F=0.0146  R=0.00058  r=15"),
-    ("ANKLE", "F=0.00589 R=0.0182   r=15"),
-    ("KNEE", "F=0.0150  R=0.00175  r=15"),
-    ("ELBOW", "F=0.00912 R=0.00094  r=15"),
-    ("TRUNK", "F=0.00657 R=0.00354  r=15"),
-    ("GRIP", "F=0.00794 R=0.00109  r=30"),
+    ("SHOULDER", "F=0.01820 R=0.00168 r=15"),
+    ("ANKLE", "F=0.00589 R=0.00058 r=15"),
+    ("KNEE", "F=0.01500 R=0.00149 r=15"),
+    ("ELBOW", "F=0.00912 R=0.00094 r=15"),
+    ("TRUNK", "F=0.00755 R=0.00075 r=15"),
+    ("GRIP", "F=0.00980 R=0.00064 r=30"),
     ("ALL_MUSCLES", "list[MuscleParams] len=6"),
     ("MUSCLE_REGISTRY", "dict[str, MuscleParams] len=6"),
 ])

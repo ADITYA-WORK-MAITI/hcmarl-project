@@ -76,12 +76,15 @@ class MuscleParams:
 # 30-180x larger because dynamic contractions impose higher metabolic
 # demand per unit time. See real_data_calibration.py for dynamic regime.
 
-SHOULDER = MuscleParams(name="shoulder", F=0.0146,  R=0.00058, r=15)
-ANKLE    = MuscleParams(name="ankle",    F=0.00589, R=0.0182,  r=15)
-KNEE     = MuscleParams(name="knee",     F=0.0150,  R=0.00175, r=15)
+# Values match Frey-Law, Looft & Heitsman (2012) Table 1 verbatim.
+# Cross-verified: shoulder (F,R) in Looft & Frey-Law 2020 L206; grip (F,R,r)
+# in Looft et al. 2018 Table 2. r=15 for all joints except grip (r=30).
+SHOULDER = MuscleParams(name="shoulder", F=0.01820, R=0.00168, r=15)
+ANKLE    = MuscleParams(name="ankle",    F=0.00589, R=0.00058, r=15)
+KNEE     = MuscleParams(name="knee",     F=0.01500, R=0.00149, r=15)
 ELBOW    = MuscleParams(name="elbow",    F=0.00912, R=0.00094, r=15)
-TRUNK    = MuscleParams(name="trunk",    F=0.00657, R=0.00354, r=15)
-GRIP     = MuscleParams(name="grip",     F=0.00794, R=0.00109, r=30)  # Looft et al. (2018) Table 2: r=30 for hand grip (forearm flexors)
+TRUNK    = MuscleParams(name="trunk",    F=0.00755, R=0.00075, r=15)
+GRIP     = MuscleParams(name="grip",     F=0.00980, R=0.00064, r=30)
 
 ALL_MUSCLES = [SHOULDER, ANKLE, KNEE, ELBOW, TRUNK, GRIP]
 
@@ -163,7 +166,10 @@ class ThreeCCr:
     Args:
         params: Calibrated MuscleParams for the muscle group.
         kp: Proportional gain for baseline neural drive controller (Eq 35).
-            Default 10.0 provides fast tracking of target load.
+            Default 1.0 matches the production env (pettingzoo_wrapper,
+            warehouse_env, every config ecbf.kp). Xia & Frey-Law 2008
+            report LD=LR=10 but their unit convention differs from ours;
+            our 1.0 is a design choice verified against endurance data.
     """
 
     def __init__(self, params: MuscleParams, kp: float = 1.0) -> None:

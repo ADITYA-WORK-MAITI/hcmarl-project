@@ -36,12 +36,12 @@ def gen_three_cc_r():
         ("Rr_over_F", "Rr/F overshoot ratio"),
     ])
     fb.make_node("constants", "Module Constants (Table 1)", CONST, [
-        ("SHOULDER", "F=0.0146 R=0.00058 r=15"),
-        ("ANKLE", "F=0.00589 R=0.0182 r=15"),
-        ("KNEE", "F=0.0150 R=0.00175 r=15"),
+        ("SHOULDER", "F=0.01820 R=0.00168 r=15"),
+        ("ANKLE", "F=0.00589 R=0.00058 r=15"),
+        ("KNEE", "F=0.01500 R=0.00149 r=15"),
         ("ELBOW", "F=0.00912 R=0.00094 r=15"),
-        ("TRUNK", "F=0.00657 R=0.00354 r=15"),
-        ("GRIP", "F=0.00794 R=0.00109 r=30"),
+        ("TRUNK", "F=0.00755 R=0.00075 r=15"),
+        ("GRIP", "F=0.00980 R=0.00064 r=30"),
         ("ALL_MUSCLES", "list[MuscleParams] len=6"),
         ("MUSCLE_REGISTRY", "dict[str, MuscleParams]"),
     ])
@@ -146,10 +146,10 @@ def gen_three_cc_r():
     fb.set_rank("r6", ["step_euler", "simulate", "verify_conservation", "steady_state"])
 
     # --- Legend ---
-    fb.add_legend_entry("F, R, r", "fatigue rate, recovery rate, reperfusion mult", "0.0146, 0.00058, 15")
+    fb.add_legend_entry("F, R, r", "fatigue rate, recovery rate, reperfusion mult", "0.01820, 0.00168, 15")
     fb.add_legend_entry("MR, MA, MF", "motor unit fractions (resting/active/fatigued)", "[0.7, 0.2, 0.1]")
     fb.add_legend_entry("MUSCLE_REGISTRY", "dict[str, MuscleParams] all 6 muscles", "{'shoulder': MuscleParams(...)}")
-    fb.add_legend_entry("self.params", "MuscleParams instance stored on ThreeCCr", "MuscleParams('shoulder', F=0.0146, ...)")
+    fb.add_legend_entry("self.params", "MuscleParams instance stored on ThreeCCr", "MuscleParams('shoulder', F=0.01820, ...)")
     fb.add_legend_entry("self.kp", "proportional gain scalar stored on ThreeCCr", "10.0")
     fb.add_legend_entry("Reff", "effective recovery: R or R*r", "0.0087")
     fb.add_legend_entry("C(t)", "neural drive (recruitment rate) [min^-1]", "0.05")
@@ -263,7 +263,7 @@ def gen_ecbf_filter():
 
     # --- Legend ---
     fb.add_legend_entry("ecbf_params", "ECBFParams instance (alpha1,alpha2,alpha3,theta_max)", "ECBFParams(theta_max=0.7, alpha1=0.05, ...)")
-    fb.add_legend_entry("self._F, _R, alphas", "scalar muscle + gain params stored on ECBFFilter", "_F=0.0146, _R=0.00058, alpha1=0.05")
+    fb.add_legend_entry("self._F, _R, alphas", "scalar muscle + gain params stored on ECBFFilter", "_F=0.01820, _R=0.00168, alpha1=0.05")
     fb.add_legend_entry("h, h_dot, psi_1", "barrier value, time-derivative, composite barrier", "0.35, -0.01, 0.02")
     fb.add_legend_entry("psi_1, h, h2", "composite barrier + fatigue + resting barrier values", "0.02, 0.35, 0.65")
     fb.add_legend_entry("C_upper_ecbf, C_upper_cbf", "analytical upper bounds on C from Eqs 19, 23", "0.10, 0.14")
@@ -758,8 +758,8 @@ def gen_real_data_calibration():
     fb.add_legend_entry("TL fractions", "target-load fractions from TASK_TO_MVIC_FRACTION", "{task1_35i: 0.35, task2_45i: 0.45, ...}")
     fb.add_legend_entry("F_opt per subject", "array of calibrated F values across subjects", "[1.24, 0.98, 1.41, ...]")
     fb.add_legend_entry("non-shoulder (F,R)", "correlated (F_i, R_i) samples for non-shoulder muscles", "[(0.015, 0.0006), ...]")
-    fb.add_legend_entry("population means", "POPULATION_FR mean F, mean R per muscle", "{'shoulder': (0.0146, 0.00058)}")
-    fb.add_legend_entry("F_pop, R_pop, CV", "population mean + coefficient of variation for log-normal sampling", "0.0146, 0.00058, 0.30")
+    fb.add_legend_entry("population means", "POPULATION_FR mean F, mean R per muscle", "{'shoulder': (0.01820, 0.00168)}")
+    fb.add_legend_entry("F_pop, R_pop, CV", "population mean + coefficient of variation for log-normal sampling", "0.01820, 0.00168, 0.30")
     fb.add_legend_entry("isometric ET reference", "ET predicted from isometric power model for cross-validation", "105.0")
     fb.add_legend_entry("calibrated params", "per-subject per-muscle (F_i,R_i) passed to demo generator", "{'S01': {'shoulder': (1.24, ...)}, ...}")
     fb.add_legend_entry("F, R", "fatigue/recovery rate [min^-1]", "F=1.2, R=0.02")
@@ -856,7 +856,7 @@ def gen_warehouse_env():
     fb.set_rank("r4", ["make_helpers"])
 
     fb.add_legend_entry("self.state", "dict muscle->ThreeCCrState stored on env, reset to fresh on reset()", "{'shoulder': ThreeCCrState(1,0,0)}")
-    fb.add_legend_entry("self.muscle_groups,theta_max", "muscle parameter dicts forwarded to integrator", "{'shoulder':{F:0.0146,...}}, {'shoulder':0.7}")
+    fb.add_legend_entry("self.muscle_groups,theta_max", "muscle parameter dicts forwarded to integrator", "{'shoulder':{F:0.01820,...}}, {'shoulder':0.7}")
     fb.add_legend_entry("obs", "flattened [MR,MA,MF]*muscles + step_norm", "[0.7,0.2,0.1,...,0.5]")
     fb.add_legend_entry("reward", "NSWF reward (Eq 33 style)", "0.85")
     fb.add_legend_entry("ecbf_interventions", "count of muscles where ECBF clipped C", "1")

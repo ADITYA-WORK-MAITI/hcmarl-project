@@ -25,10 +25,12 @@ import numpy as np
 
 from hcmarl.three_cc_r import MuscleParams, ThreeCCrState
 
-# Penalty on slack variables in the CBF-QP (Ames et al. 2019,
-# "Control Barrier Functions: Theory and Applications", Section IV-B).
-# Large enough that slack is only ever non-zero when strict feasibility
-# is impossible under numerical noise; small enough to stay well-conditioned.
+# Slack-penalty coefficient for the CLF-CBF QP. Ames et al. 2019 (ECC,
+# "Control Barrier Functions: Theory and Applications") prescribes only
+# p > 0 for solvability of the relaxed QP (Eq. 17 of that paper); no
+# magnitude is prescribed by the literature. 1000.0 is an engineering
+# design choice: large enough to keep slack effectively zero under
+# numerical noise, small enough to preserve QP conditioning.
 SLACK_PENALTY: float = 1000.0
 
 # Slack activation tolerance: slack values below this are treated as 0

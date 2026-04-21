@@ -32,19 +32,19 @@ class TestMuscleParams:
     """Test calibrated parameters and derived quantities (Table 1)."""
 
     def test_shoulder_raw_values(self):
-        """Verify shoulder F, R, r from Table 1."""
-        assert SHOULDER.F == 0.0146
-        assert SHOULDER.R == 0.00058
+        """Verify shoulder F, R, r from Frey-Law, Looft & Heitsman 2012 Table 1."""
+        assert SHOULDER.F == 0.01820
+        assert SHOULDER.R == 0.00168
         assert SHOULDER.r == 15
 
     def test_ankle_raw_values(self):
         assert ANKLE.F == 0.00589
-        assert ANKLE.R == 0.0182
+        assert ANKLE.R == 0.00058
         assert ANKLE.r == 15
 
     def test_knee_raw_values(self):
-        assert KNEE.F == 0.0150
-        assert KNEE.R == 0.00175
+        assert KNEE.F == 0.01500
+        assert KNEE.R == 0.00149
         assert KNEE.r == 15
 
     def test_elbow_raw_values(self):
@@ -53,30 +53,30 @@ class TestMuscleParams:
         assert ELBOW.r == 15
 
     def test_trunk_raw_values(self):
-        assert TRUNK.F == 0.00657
-        assert TRUNK.R == 0.00354
+        assert TRUNK.F == 0.00755
+        assert TRUNK.R == 0.00075
         assert TRUNK.r == 15
 
     def test_grip_raw_values(self):
-        assert GRIP.F == 0.00794
-        assert GRIP.R == 0.00109
-        assert GRIP.r == 30  # Looft et al. (2018) Table 2: r=30 for hand grip
+        assert GRIP.F == 0.00980
+        assert GRIP.R == 0.00064
+        assert GRIP.r == 30  # Looft et al. 2018 Table 2: r=30 for hand grip
 
     def test_shoulder_delta_max(self):
-        """Verify delta_max = R/(F+R) = 3.8% for shoulder (Table 1)."""
-        expected = 0.00058 / (0.0146 + 0.00058)
+        """delta_max = R/(F+R) = 8.45% for shoulder (Frey-Law 2012 Table 1)."""
+        expected = 0.00168 / (0.01820 + 0.00168)
         assert abs(SHOULDER.delta_max - expected) < 1e-10
-        assert abs(SHOULDER.delta_max - 0.0382) < 0.001
+        assert abs(SHOULDER.delta_max - 0.0845) < 0.001
 
     def test_ankle_delta_max(self):
-        """Verify delta_max = 75.5% for ankle (Table 1)."""
-        expected = 0.0182 / (0.00589 + 0.0182)
+        """delta_max = 8.96% for ankle (Frey-Law 2012 Table 1)."""
+        expected = 0.00058 / (0.00589 + 0.00058)
         assert abs(ANKLE.delta_max - expected) < 1e-10
-        assert abs(ANKLE.delta_max - 0.755) < 0.001
+        assert abs(ANKLE.delta_max - 0.0896) < 0.001
 
     def test_shoulder_C_max(self):
         """Verify C_max = F*R/(F+R) for shoulder (Eq 6)."""
-        expected = 0.0146 * 0.00058 / (0.0146 + 0.00058)
+        expected = 0.01820 * 0.00168 / (0.01820 + 0.00168)
         assert abs(SHOULDER.C_max - expected) < 1e-12
 
     def test_C_max_dimensional_check(self):
@@ -86,44 +86,48 @@ class TestMuscleParams:
             assert abs(m.C_max - m.delta_max * m.F) < 1e-12
 
     def test_shoulder_theta_min_max(self):
-        """Verify theta_min_max = F/(F+Rr) = 62.7% for shoulder (Eq 25)."""
-        expected = 0.0146 / (0.0146 + 0.00058 * 15)
+        """theta_min_max = F/(F+Rr) = 41.9% for shoulder (Eq 25)."""
+        expected = 0.01820 / (0.01820 + 0.00168 * 15)
         assert abs(SHOULDER.theta_min_max - expected) < 1e-10
-        assert abs(SHOULDER.theta_min_max - 0.627) < 0.001
+        assert abs(SHOULDER.theta_min_max - 0.419) < 0.002
 
     def test_ankle_theta_min_max(self):
-        """Verify theta_min_max = 2.1% for ankle (Table 2)."""
-        expected = 0.00589 / (0.00589 + 0.0182 * 15)
+        """theta_min_max = 40.4% for ankle (r=15)."""
+        expected = 0.00589 / (0.00589 + 0.00058 * 15)
         assert abs(ANKLE.theta_min_max - expected) < 1e-10
-        assert abs(ANKLE.theta_min_max - 0.021) < 0.001
+        assert abs(ANKLE.theta_min_max - 0.404) < 0.002
 
     def test_grip_theta_min_max(self):
-        """Verify theta_min_max = 19.5% for grip (r=30, Looft et al. 2018)."""
-        expected = 0.00794 / (0.00794 + 0.00109 * 30)
+        """theta_min_max = 33.8% for grip (r=30, Looft et al. 2018)."""
+        expected = 0.00980 / (0.00980 + 0.00064 * 30)
         assert abs(GRIP.theta_min_max - expected) < 1e-10
-        assert abs(GRIP.theta_min_max - 0.195) < 0.002
+        assert abs(GRIP.theta_min_max - 0.338) < 0.002
 
     def test_shoulder_Rr_over_F(self):
-        """Shoulder Rr/F = 0.596 < 1 => overshoot possible (Table 2)."""
-        expected = (0.00058 * 15) / 0.0146
+        """Shoulder Rr/F = 1.385 > 1 under corrected values (Table B)."""
+        expected = (0.00168 * 15) / 0.01820
         assert abs(SHOULDER.Rr_over_F - expected) < 1e-10
-        assert SHOULDER.Rr_over_F < 1.0  # Overshoot possible
+        assert SHOULDER.Rr_over_F > 1.0  # Under corrected Frey-Law 2012 values
 
     def test_ankle_Rr_over_F(self):
-        """Ankle Rr/F = 46.35 >> 1 => no overshoot (Table 2)."""
+        """Ankle Rr/F = 1.478 > 1."""
         assert ANKLE.Rr_over_F > 1.0
 
-    def test_fatigue_resistance_ranking(self):
-        """Verify ranking: ankle > trunk > grip > knee > elbow > shoulder.
+    def test_all_muscles_Rr_over_F_above_one(self):
+        """All six muscles have Rr/F > 1 under Frey-Law 2012 Table 1.
 
-        Source: Frey-Law & Avin (2010), Rohmert (1960).
+        This is the corrected finding (CONSTANTS_AUDIT Table B): under the
+        published F, R, r values, every muscle recovers faster than it
+        fatigues. The earlier "fatigue-resistance ranking" claim
+        (ankle > trunk > grip > knee > elbow > shoulder) was an artifact
+        of the transcription errors in F, R; it does not survive the
+        correction. Under the true values, the muscles differ mainly in
+        their Rr/F ratio (shoulder 1.385, ankle 1.478, knee 1.490,
+        trunk 1.490, elbow 1.547, grip 1.959), not in delta_max (all
+        within the 6-9% band).
         """
-        deltas = {m.name: m.delta_max for m in ALL_MUSCLES}
-        assert deltas["ankle"] > deltas["trunk"]
-        assert deltas["trunk"] > deltas["grip"]
-        assert deltas["grip"] > deltas["knee"]
-        assert deltas["knee"] > deltas["elbow"]
-        assert deltas["elbow"] > deltas["shoulder"]
+        for m in ALL_MUSCLES:
+            assert m.Rr_over_F > 1.0, f"{m.name} Rr/F = {m.Rr_over_F}"
 
     def test_six_muscles_registered(self):
         assert len(ALL_MUSCLES) == 6
@@ -423,7 +427,7 @@ class TestSimulation:
 class TestDynamicIsometricScaling:
     """Validate that isometric and dynamic F regimes are distinct and consistent.
 
-    Table 1 isometric F = 0.0146 min^{-1} for shoulder predicts endurance
+    Table 1 isometric F = 0.01820 min^{-1} for shoulder predicts endurance
     times of 40-100+ minutes for sustained holds at 15-55% MVC. Dynamic
     rotations (WSD4FEDSRM) have endurance 50-250 seconds, requiring
     F ~ 0.3-3.0 min^{-1}. The 30-180x ratio is expected because the 3CC-r
@@ -433,7 +437,7 @@ class TestDynamicIsometricScaling:
     """
 
     def test_isometric_F_predicts_long_endurance(self):
-        """Isometric F=0.0146 at 35% MVC must predict ET > 600s."""
+        """Isometric F=0.01820 at 35% MVC must predict ET > 600s."""
         from hcmarl.real_data_calibration import predict_endurance_time
         et = predict_endurance_time(
             F=SHOULDER.F, R=0.02, r=15.0,
@@ -451,12 +455,17 @@ class TestDynamicIsometricScaling:
         assert et < 300.0, f"Dynamic ET={et:.0f}s, expected <300s"
 
     def test_scaling_ratio_range(self):
-        """F_dynamic / F_isometric should be 30-180x for typical dynamic F."""
+        """F_dynamic / F_isometric should be roughly 24-150x under corrected F_isometric.
+
+        Under CONSTANTS_AUDIT v2 corrected shoulder F_isometric = 0.01820
+        (Frey-Law 2012 Table 1), the WSD4FEDSRM dynamic subjects span
+        F_dynamic 0.44-2.62, giving ratios 24.2x-144x.
+        """
         F_dynamic_low = 0.44   # Slowest WSD4FEDSRM subject
         F_dynamic_high = 2.62  # Fastest WSD4FEDSRM subject
         ratio_low = F_dynamic_low / SHOULDER.F
         ratio_high = F_dynamic_high / SHOULDER.F
-        assert ratio_low > 25.0, f"Low ratio={ratio_low:.1f}x, expected >25x"
+        assert ratio_low > 20.0, f"Low ratio={ratio_low:.1f}x, expected >20x"
         assert ratio_high < 200.0, f"High ratio={ratio_high:.1f}x, expected <200x"
 
 

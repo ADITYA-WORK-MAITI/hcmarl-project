@@ -50,10 +50,10 @@ def test_f2_horizontal_multiplier_canonical():
 
 
 def test_f2_vertical_multiplier_canonical():
-    # VM = 1 - 0.003|V-75|. Identity at V=75; zero outside [0,175].
+    # VM = 1 - 0.0031|V-75| per Waters et al. 1993 Appendix A. Identity at V=75; zero outside [0,175].
     assert vertical_multiplier(75.0) == pytest.approx(1.0)
-    assert vertical_multiplier(0.0) == pytest.approx(1.0 - 0.003 * 75.0)
-    assert vertical_multiplier(175.0) == pytest.approx(1.0 - 0.003 * 100.0)
+    assert vertical_multiplier(0.0) == pytest.approx(1.0 - 0.0031 * 75.0)
+    assert vertical_multiplier(175.0) == pytest.approx(1.0 - 0.0031 * 100.0)
     assert vertical_multiplier(200.0) == 0.0
     assert vertical_multiplier(-1.0) == 0.0
 

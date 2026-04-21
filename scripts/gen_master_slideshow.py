@@ -60,7 +60,7 @@ EDGES = [
     {"from": "utils", "to": "nswf", "label": "safe_log", "desc": "Numerically stable log utility (nswf_allocator.py:26)", "ex": "safe_log(0.0) = -46.05", "type": "internal"},
     {"from": "utils", "to": "pipeline", "label": "load_yaml, get_logger", "desc": "YAML loader + logger factory (pipeline.py:33)", "ex": "load_yaml('config/default_config.yaml')", "type": "internal"},
     {"from": "EXT_cvxpy", "to": "ecbf", "label": "cp.Variable, cp.Problem", "desc": "CVXPY optimisation primitives", "ex": "cp.Variable(3)", "type": "dangling_in"},
-    {"from": "three_cc_r", "to": "ecbf", "label": "MuscleParams, ThreeCCrState", "desc": "Muscle dataclass + ODE state", "ex": "MuscleParams(F=0.0146, R=0.00058)  # SHOULDER", "type": "internal"},
+    {"from": "three_cc_r", "to": "ecbf", "label": "MuscleParams, ThreeCCrState", "desc": "Muscle dataclass + ODE state", "ex": "MuscleParams(F=0.01820, R=0.00168)  # SHOULDER", "type": "internal"},
     {"from": "three_cc_r", "to": "pipeline", "label": "ThreeCCr, get_muscle, SHOULDER", "desc": "ODE solver + factory + preset", "ex": "ThreeCCr(SHOULDER).simulate(60)", "type": "internal"},
     # Phase A Layer 3: Pipeline integration
     {"from": "ecbf", "to": "pipeline", "label": "ECBFFilter, ECBFParams", "desc": "CBF-QP filter class + params dataclass (pipeline.py:24)", "ex": "ECBFFilter(params, muscle, state)", "type": "internal"},
@@ -70,7 +70,7 @@ EDGES = [
     # Phase A Layer 4: MMICRL + Real data
     {"from": "EXT_torch", "to": "mmicrl", "label": "nn.Module, nn.Linear", "desc": "PyTorch NN base classes", "ex": "nn.Linear(19, 64)", "type": "dangling_in"},
     {"from": "EXT_wsd", "to": "real_data", "label": "WSD4FEDSRM/ CSV files", "desc": "Real fatigue dataset (34 subjects)", "ex": "demographic.csv + Borg/MVIC/EMG/IMU/PPG/KSS folders", "type": "dangling_in"},
-    {"from": "three_cc_r", "to": "real_data", "label": "MuscleParams, ThreeCCr, SHOULDER", "desc": "Muscle params + ODE + preset", "ex": "SHOULDER.F = 0.0146", "type": "internal"},
+    {"from": "three_cc_r", "to": "real_data", "label": "MuscleParams, ThreeCCr, SHOULDER", "desc": "Muscle params + ODE + preset", "ex": "SHOULDER.F = 0.01820", "type": "internal"},
     {"from": "real_data", "to": "mmicrl", "label": "demo trajectories", "desc": "Path G calibrated demos injected via real_data.load_path_g_into_collector() into mmicrl.DemonstrationCollector (lazy import, real_data_calibration.py:962)", "ex": "[(state=[MR,MA,MF], action=task_idx), ...]", "type": "internal"},
     {"from": "mmicrl", "to": "pettingzoo", "label": "theta_max dict (per worker, per muscle)", "desc": "MMICRL learned per-type fatigue thresholds; routed via train.py config into WarehousePettingZoo constructor (train.py:201-243)", "ex": "{'worker_0': {'shoulder': 0.72, 'ankle': 0.80, ...}}", "type": "internal"},
     # Phase A Layer 5: Environment
@@ -140,12 +140,12 @@ EDGES = [
     {"from": "notebooks", "to": "EXT_drive", "label": "checkpoints + logs", "desc": "Colab -> Google Drive", "ex": "Drive/hcmarl/checkpoints/", "type": "dangling_out"},
     {"from": "notebooks", "to": "EXT_evalj", "label": "eval JSONs", "desc": "Eval result files", "ex": "hcmarl_eval.json", "type": "dangling_out"},
     # Tests (last — they consume from everything)
-    {"from": "three_cc_r", "to": "tests", "label": "SHOULDER, ThreeCCr, MuscleParams, ...", "desc": "Core 3CC-r types", "ex": "SHOULDER.F = 0.0146", "type": "test"},
+    {"from": "three_cc_r", "to": "tests", "label": "SHOULDER, ThreeCCr, MuscleParams, ...", "desc": "Core 3CC-r types", "ex": "SHOULDER.F = 0.01820", "type": "test"},
     {"from": "ecbf", "to": "tests", "label": "ECBFParams, ECBFFilter", "desc": "Filter classes", "ex": "ECBFFilter(params, state)", "type": "test"},
     {"from": "nswf", "to": "tests", "label": "NSWFAllocator, NSWFParams, AllocationResult", "desc": "Allocator classes", "ex": "NSWFAllocator(NSWFParams())", "type": "test"},
     {"from": "pipeline", "to": "tests", "label": "HCMARLPipeline, TaskProfile, WorkerState", "desc": "Pipeline + data classes", "ex": "HCMARLPipeline.from_config()", "type": "test"},
     {"from": "mmicrl", "to": "tests", "label": "CFDE, _MADE, MMICRL, ...", "desc": "Flow model + collector", "ex": "CFDE(input_dim=18, n_types=3)", "type": "test"},
-    {"from": "real_data", "to": "tests", "label": "predict_endurance_time, POPULATION_FR, ...", "desc": "Calibration fn + constants", "ex": "POPULATION_FR['shoulder']=(0.0146, 0.00058)", "type": "test"},
+    {"from": "real_data", "to": "tests", "label": "predict_endurance_time, POPULATION_FR, ...", "desc": "Calibration fn + constants", "ex": "POPULATION_FR['shoulder']=(0.01820, 0.00168)", "type": "test"},
     {"from": "warehouse", "to": "tests", "label": "SingleWorkerWarehouseEnv, ...", "desc": "Env classes", "ex": "SingleWorkerWarehouseEnv()", "type": "test"},
     {"from": "pettingzoo", "to": "tests", "label": "WarehousePettingZoo", "desc": "PettingZoo env", "ex": "WarehousePettingZoo(n_workers=3)", "type": "test"},
     {"from": "hcmarl_agent", "to": "tests", "label": "HCMARLAgent", "desc": "Pipeline-aware agent", "ex": "HCMARLAgent(obs_dim=19, global_obs_dim=55, n_actions=6, n_agents=3, theta_max={...}, ecbf_params={...})", "type": "test"},

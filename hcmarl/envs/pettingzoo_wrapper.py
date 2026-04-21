@@ -61,24 +61,24 @@ class WarehousePettingZoo:
         else:
             self.muscle_params = {m: {"F": get_muscle(m).F, "R": get_muscle(m).R, "r": get_muscle(m).r} for m in self.muscle_names}
 
-        # S-17: grip raised from 0.25 to 0.35 to match hcmarl_full_config.yaml
-        # and warehouse_env.py defaults. With theta_min_max=19.5% (r=30),
-        # the old 0.25 gave only 5.5pp margin -- ECBF was excessively
-        # aggressive on grip, creating an artificial bottleneck. 0.35 gives
-        # 15.5pp margin, consistent with all training configs.
-        #
-        # S-18: Ankle (0.80) and trunk (0.65) have wide margins above their
-        # theta_min_max values (2.1% and 11.0% respectively). This is
-        # biologically correct, not a calibration oversight:
-        #   - Ankle: Rr/F = 46.35 (Table 2) -- recovers 46x faster than it
-        #     fatigues. Fatigue is self-limiting; MF never approaches 0.80
-        #     under any realistic task demand. The ECBF serves as a backup.
-        #   - Trunk: Rr/F = 8.08 -- fast recovery means the ECBF rarely
-        #     binds. The filter is most critical for shoulder (Rr/F = 0.596,
-        #     the only muscle where rest-phase overshoot is a genuine concern
-        #     per Theorem 5.7 and Table 2 of the math doc).
-        # Artificially lowering these thresholds would impose constraints
-        # that the physiology does not warrant.
+        # Default theta_max matches config/hcmarl_full_config.yaml and all
+        # baseline configs. Rest-phase floor theta_min_max = F/(F + R*r) under
+        # Frey-Law et al. 2012 Table 1 values:
+        #   shoulder 41.9% | ankle 40.4% | knee 40.2% | elbow 39.3% |
+        #   trunk 40.2%    | grip 33.8%.
+        # Margins vs the defaults below:
+        #   shoulder 28.1pp | ankle 39.6pp | knee 19.8pp | elbow  5.7pp |
+        #   trunk    24.8pp | grip   1.2pp.
+        # The tight grip margin is DECISION-PENDING (see CONSTANTS_AUDIT F6):
+        # raise to 0.45 to match elbow, or keep 0.35 and tolerate ECBF
+        # aggressiveness on grip-intensive tasks.
+        # Rr/F (recovery bandwidth per unit fatigue) under corrected values:
+        #   shoulder 1.38 | ankle 1.48 | knee 1.49 | elbow 1.55 |
+        #   trunk    1.49 | grip 1.96.
+        # All six muscles recover faster than they fatigue (Rr/F > 1), so
+        # fatigue is self-limiting under sustainable load.  The ECBF is
+        # most informative for transient overshoot detection, not steady-
+        # state confinement.
         default_theta = {
             "shoulder": 0.70, "ankle": 0.80, "knee": 0.60,
             "elbow": 0.45, "trunk": 0.65, "grip": 0.35,

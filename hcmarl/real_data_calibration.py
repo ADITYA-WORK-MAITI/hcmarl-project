@@ -18,7 +18,7 @@ IMPORTANT — Dynamic vs isometric calibration:
     (~0.3-3.0 /min) are "effective dynamic fatigue rates" that capture
     the real fatigue behavior of each subject during the actual task.
     They are NOT directly comparable to the isometric population means
-    in Table 1 of the mathematical modelling document (F=0.0146 /min
+    in Table 1 of the mathematical modelling document (F=0.01820 /min
     for shoulder). This is scientifically valid: the 3CC-r model is
     used as the system model, and its parameters are fit to observed data.
 
@@ -139,7 +139,7 @@ def calibrate_F_for_subject(
     motivated value and calibrate only F.
 
     F_range is (0.1, 5.0) because the WSD4FEDSRM tasks are dynamic
-    shoulder rotations. The population isometric mean F=0.0146 gives
+    shoulder rotations. The population isometric mean F=0.01820 gives
     endurance times >1000s — far too long. Effective dynamic F values
     are ~0.3-3.0 /min.
 
@@ -206,7 +206,7 @@ def calibrate_F_for_subject(
 # -----------------------------------------------------------------------
 
 # Isometric F for shoulder from Table 1 of math doc (Frey-Law et al. 2012)
-F_ISOMETRIC_SHOULDER = SHOULDER.F  # 0.0146 min^{-1}
+F_ISOMETRIC_SHOULDER = SHOULDER.F  # 0.01820 min^{-1} (Frey-Law 2012 Table 1)
 
 
 def compute_dynamic_isometric_report(
@@ -470,30 +470,36 @@ def predicted_endurance_population(
 # Non-shoulder muscle calibration from published distributions
 # -----------------------------------------------------------------------
 
-# Population F, R from Frey-Law et al. (2012) Table 1 (as in math doc)
+# Population F, R from Frey-Law, Looft & Heitsman (2012) Table 1.
+# Cross-verified: shoulder (F,R) matches Looft & Frey-Law 2020 L206;
+# grip (F,R,r=30) matches Looft et al. 2018 Table 2.
 POPULATION_FR = {
-    'shoulder': (0.0146, 0.00058),
-    'ankle':    (0.00589, 0.0182),
-    'knee':     (0.0150, 0.00175),
+    'shoulder': (0.01820, 0.00168),
+    'ankle':    (0.00589, 0.00058),
+    'knee':     (0.01500, 0.00149),
     'elbow':    (0.00912, 0.00094),
-    'trunk':    (0.00657, 0.00354),
-    'grip':     (0.00794, 0.00109),
+    'trunk':    (0.00755, 0.00075),
+    'grip':     (0.00980, 0.00064),
 }
 
 # Per-muscle CV for F from published data.
-# Elbow: Liu et al. (2002) Table 2, 10 subjects, CV_F = 0.36.
-# Others: conservative default CV=0.30 (below Liu's 0.36 measurement).
+# Handgrip: Liu, Brown & Yue (2002) Table 2, N=10 sustained maximal
+# voluntary handgrip contraction, Mean F=0.0206/s SD=0.0075/s -> CV_F=0.364.
+# All other muscles: conservative engineering default CV=0.30 (no published
+# per-muscle CV exists in the 3CC-r calibration literature).
 POPULATION_CV_F = {
     'shoulder': 0.30,
     'ankle':    0.30,
     'knee':     0.30,
-    'elbow':    0.36,  # Liu et al. (2002) Table 2
+    'elbow':    0.30,
     'trunk':    0.30,
-    'grip':     0.30,
+    'grip':     0.36,  # Liu et al. (2002) Table 2 -- handgrip, not elbow
 }
 
-# CV for R: Liu et al. (2002) measured CV_R = 0.43 for elbow.
-# We use 0.40 as default (conservative) for all muscles.
+# CV for R: Liu et al. (2002) Table 2 reports CV_R = 0.429 for handgrip
+# (Mean R=0.0084/s SD=0.0036/s). We use 0.40 as a conservative default
+# for all muscles; no published per-muscle shoulder/ankle/knee/trunk CV_R
+# exists, and 0.40 is slightly below Liu's handgrip value.
 POPULATION_CV_R = 0.40
 
 

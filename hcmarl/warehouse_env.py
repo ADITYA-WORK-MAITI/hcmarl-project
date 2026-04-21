@@ -53,9 +53,9 @@ class SingleWorkerWarehouseEnv(gym.Env):
         # task holds. Dynamic tasks require re-calibration (see
         # real_data_calibration.py for dynamic regime with 30-180x larger F).
         self.muscle_groups = muscle_groups or {
-            "shoulder": {"F": 0.0146, "R": 0.00058, "r": 15},
+            "shoulder": {"F": 0.01820, "R": 0.00168, "r": 15},
             "elbow":    {"F": 0.00912, "R": 0.00094, "r": 15},
-            "grip":     {"F": 0.00794, "R": 0.00109, "r": 30},  # Looft et al. (2018) Table 2: r=30 for hand grip
+            "grip":     {"F": 0.00980, "R": 0.00064, "r": 30},  # Looft et al. 2018 Table 2
         }
         self.muscle_names = list(self.muscle_groups.keys())
         self.n_muscles = len(self.muscle_names)
@@ -256,9 +256,9 @@ class WarehouseMultiAgentEnv:
         # Isometric (F, R) from Table 1 — for sustained warehouse task holds.
         # Dynamic tasks require re-calibration; see real_data_calibration.py.
         self.muscle_groups = muscle_groups or {
-            "shoulder": {"F": 0.0146, "R": 0.00058, "r": 15},
+            "shoulder": {"F": 0.01820, "R": 0.00168, "r": 15},
             "elbow":    {"F": 0.00912, "R": 0.00094, "r": 15},
-            "grip":     {"F": 0.00794, "R": 0.00109, "r": 30},  # Looft et al. (2018) Table 2: r=30 for hand grip
+            "grip":     {"F": 0.00980, "R": 0.00064, "r": 30},  # Looft et al. 2018 Table 2
         }
         self.muscle_names = list(self.muscle_groups.keys())
         self.n_muscles = len(self.muscle_names)

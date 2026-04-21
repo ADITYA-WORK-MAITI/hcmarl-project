@@ -55,13 +55,13 @@ class TestConstants:
 
     def test_population_FR_shoulder(self):
         F, R = POPULATION_FR['shoulder']
-        assert F == 0.0146
-        assert R == 0.00058
+        assert F == 0.01820
+        assert R == 0.00168
 
     def test_population_FR_grip(self):
         F, R = POPULATION_FR['grip']
-        assert F == 0.00794
-        assert R == 0.00109
+        assert F == 0.00980
+        assert R == 0.00064
 
     def test_population_FR_all_six_muscles(self):
         assert set(POPULATION_FR.keys()) == {
@@ -69,7 +69,7 @@ class TestConstants:
         }
 
     def test_F_isometric_shoulder(self):
-        assert F_ISOMETRIC_SHOULDER == SHOULDER.F == 0.0146
+        assert F_ISOMETRIC_SHOULDER == SHOULDER.F == 0.01820
 
     def test_task_to_mvic_has_six_tasks(self):
         assert len(TASK_TO_MVIC_FRACTION) == 6
@@ -150,9 +150,9 @@ class TestPredictEnduranceTime:
             assert abs(MR + MA + MF - 1.0) < 1e-10
 
     def test_isometric_F_gives_long_endurance(self):
-        """Population isometric F=0.0146 should give ET > 600s at 35%."""
+        """Population isometric F=0.01820 should give ET > 600s at 35%."""
         et = predict_endurance_time(
-            F=0.0146, R=0.00058, r=15, target_load=0.35, max_time=7200.0,
+            F=0.01820, R=0.00168, r=15, target_load=0.35, max_time=7200.0,
         )
         assert et > 600.0
 
@@ -317,7 +317,7 @@ class TestDynamicIsometricReport:
             }
         report = compute_dynamic_isometric_report(cal)
 
-        assert report['F_isometric'] == 0.0146
+        assert report['F_isometric'] == 0.01820
         assert report['ratio_mean'] > 10.0  # dynamic F >> isometric F
         assert report['all_dynamic_F_above_10x_isometric'] is True
         assert len(report['subjects']) == 5

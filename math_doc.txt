@@ -1,0 +1,1007 @@
+    Human-Centric Multi-Agent Control (HC-MARL)
+
+     Corrected and Complete Mathematical Framework
+
+                                                                                         Aditya Maiti
+                                    University School of Automation and Robotics, GGSIPU
+
+                                                  Under the supervision of Dr. Amrit Pal Singh
+
+                                                                                   February 25, 2026
+
+1 Executive Summary
+
+This document presents the complete, line-by-line veried mathematical architecture for the
+Human-Centric Multi-Agent Reinforcement Learning (HC-MARL) framework. The following
+corrections have been implemented relative to previous iterations:
+
+C1. MMICRL objective: The weighted entropy objective 1H[( )] - 2H[( | z)] is
+
+not equivalent to mutual information I ( ; z) unless 1 = 2. The objective is now correctly
+
+characterised as a weighted information-theoretic trade-o with an explicit residual term.
+
+C2. ECBF switched-mode proof: The awed rst-derivative argument is replaced by a
+
+direct Nagumo invariance proof on h(x) = max - MF  0, yielding an explicit and veriable
+design requirement max  F /(F + Rr) for each muscle group.
+
+C3. Dual safety barrier: A second barrier function h2(x) = MR  0 is introduced to enforce
+
+physiological validity of the resting compartment, preventing transient recruitment from an
+empty pool.
+
+C4. Nash Social Welfare: The centralised allocation objective max{aij} i ln(U (i, j(i))-Di)
+
+is correctly identied as maximising the Nash Social Welfare Function (NSWF), not Nash Bar-
+gaining in the game-theoretic sense. The axiomatic connection to Nash's framework is preserved
+through the NSWF's equivalence to the Nash Bargaining Solution under specic conditions.
+
+C5. Action-to-neural-drive interface: A new section species the mapping from discrete
+
+RL task assignments to continuous neural drive trajectories C (t), closing the gap between the
+
+allocation layer and the physiological model.
+
+Preserved results. The 3CC-r ODE system, mass conservation, sustainability bound max =
+
+R/(F + R), parameter calibration, ECBF relative-degree-2 identication, and divergent dis-
+agreement utility Di(MF ) =  � (MF )2/(1 - MF ) were veried correct and are retained without
+
+change.
+
+                                                                                             1
+2 Notation and Conventions
+
+Symbol                Denition
+
+MR(t), MA(t), MF (t)  Fraction of motor units in Resting, Active, and Fatigued
+
+x(t) =                compartments at time t. Each lies in [0, 1].
+[MR, MA, MF ]         Physiological state vector in R3.
+C (t)
+                      Neural drive (recruitment rate), C(t)  [0, Ccap],        units
+F                     min-1.
+R
+r                     Fatigue rate constant, units min-1. Muscle-specic.
+Reff (t)
+TL(t)                 Base recovery rate constant, units min-1. Muscle-specic.
+
+max                   Dimensionless reperfusion multiplier (r > 1).
+mmainx
+h(x), h2(x)           Eective recovery rate: R during work, R � r during rest.
+0, 1
+1, 2                  Target load (fraction of MVC demanded by current task).
+
+3                     Duty cycle = MA at steady state (dimensionless).
+1, 2
+z                     Maximum allowable fatigue fraction (safety threshold).
+
+aij                   Rest-phase safety threshold = F /(F + Rr) (Def. 5.4).
+
+U (i, j)              Barrier functions for fatigue ceiling and resting oor.
+Di(MF )
+                      ECBF composite barriers (degree 0 and 1).
+I = {1, . . . , N }
+J = {1, . . . , M }   Positive ECBF gain parameters (class-K [25]). Used only in
+J0 = J  {0}
+                      Sections 55.4.
+
+                      CBF gain for the resting-pool barrier h2.
+
+                      MMICRL weighting coecients (Section 4).
+
+                      Latent variable denoting agent type in MMICRL.
+
+                      Trajectory  = (s0, a0, s1, a1, . . .). Used only in Section 4.
+                      Binary assignment variable: aij = 1 i task j  J assigned
+                      to worker i  I . Used only in Section 6.
+                      Productivity utility of worker i performing task j.
+
+                      Disagreement utility (value of the outside option: resting).
+
+                      Positive scaling constant for disagreement utility.
+
+                      Set of N human workers.
+                      Set of M productive tasks in the current allocation round.
+
+                      Augmented task set including the rest option (task 0).
+
+                      Small positive constant for rest-task surplus (Eq. 31).
+
+3 Physiological Control: The 3CC-r Model
+
+We model each human worker as a dynamic biological plant governed by mass-action kinetics.
+The compartmental structure was introduced by Liu, Brown & Yue [1], extended to submaximal
+tasks by Xia & Frey-Law [2], and augmented with a reperfusion multiplier by Looft, Herkert &
+Frey-Law [4]. The empirical foundation for muscle endurance modelling traces to the pioneering
+endurance-time measurements of Rohmert [26], whose data underpin all subsequent calibration
+eorts [6, 3].
+
+                            2
+3.1 State Space and Conservation Law
+
+Denition 3.1 . (State Space) The state vector x(t)  R3 represents the fraction of motor units
+
+in three compartments [1]:
+
+     MR(t): Resting / Recovered.
+     MA(t): Active / Generating force.
+     MF (t): Fatigued / Metabolically refractory.
+
+Theorem 3.2 . (Conservation of Mass) The total motor unit fraction is conserved [1]:
+
+                                 MR(t) + MA(t) + MF (t) = 1,  t  0.                    (1)
+
+Equivalently,  dMR   +  dMA   +  dMF   = 0.
+                 dt       dt       dt
+
+Proof. Summing the three ODEs in (2)(4):
+
+                        C - F MA + F MA - Reff MF + Reff MF - C = 0.
+
+3.2 System Dynamics (ODEs)
+
+The ow between compartments is governed by the neural drive C (t), the fatigue rate F , and the
+eective recovery rate Reff (t). Recovery routes from MF  MR (not directly to MA), following
+
+the correction of Xia & Frey-Law [2] over Liu et al. [1].
+
+                                 dMA   =     C(t) -  F  � MA(t),                       (2)
+                                  dt
+
+                                 dMF   =F    � MA(t) - Reff (t) � MF (t),              (3)
+                                  dt
+
+                                 dMR   =     Reff (t) � MF (t) - C(t).                 (4)
+                                  dt
+
+Remark 3.3 . (Physical Validity Constraints) Beyond conservation (1), the state must satisfy
+
+MR, MA, MF  [0, 1] for physiological validity [1, 2]. The constraint MR  0 (equivalently
+MA + MF  1) is not automatically enforced by the ODEs under arbitrary control inputs. This
+
+motivates the dual barrier system in Section 5.
+
+3.3 The Reperfusion Switch
+
+To capture the rapid vasodilation upon cessation of eort [4], we dene Reff (t) as a switched
+
+parameter:
+
+               Reff (t) =     R        if TL(t) > 0  (Work phase: standard recovery),  (5)
+                              R�r      if TL(t) = 0  (Rest phase: reperfusion).
+
+Here R is the base recovery rate (min-1) and r > 1 is the dimensionless reperfusion multiplier.
+Optimal values were determined by Looft et al. [4] via meta-analysis of 63 publications: r = 15
+for shoulder/back/ankle/knee/elbow, r = 30 for grip. Shoulder r = 15 was independently
+
+validated by Looft & Frey-Law [5].
+
+                                                        3
+3.4 Maximum Sustainable Duty Cycle
+
+Theorem 3.4 . (Sustainability Bound) At the theoretical limit of sustainability [1, 26], the
+
+maximum neural drive and duty cycle are:
+
+                Cmax  =   FR   [min-1],                     R                          (6)
+                         F +R                  max = F + R [dimensionless].
+
+Proof. At the sustainability limit [1], the resting pool is fully depleted: MR = 0, hence MA +
+MF = 1. Setting all derivatives to zero in the work phase (Reff = R):
+
+Step 1. From (2) at steady state:
+
+                                                              C
+                         C - F � MA = 0 = MA = F .                                     (7)
+
+Step 2. From (3) at steady state:
+
+                      F  � MA - R � MF  =0  =     MF  =  F  � MA  =   C                (8)
+                                                            R           .
+
+                                                                      R
+
+Step 3. Substituting into MA + MF = 1:
+
+                CC                 R+F                           FR
+                 + = 1 = C                     = 1 = C = F + R = Cmax.
+                FR                 FR
+
+Step 4. The duty cycle  = MA at steady state. From (7):
+
+                         max    =  Cmax  =  1  �   FR   =  F  R
+                                     F      F     F +R             .
+
+                                                              +R
+
+This matches Liu et al. [1], Eq. 12, and Xia & Frey-Law [2], Eq. 7.
+
+Remark 3.5 (Dimensional . Check) Cmax = F R/(F + R) has units [min-1][min-1]/[min-1] =
+
+min-1, consistent with a rate. max = R/(F + R) is [min-1]/[min-1], correctly dimensionless.
+
+3.5 Calibrated Parameters
+
+Parameters F and R are from Frey-Law, Looft & Heitsman [3] (Monte Carlo calibration against
+
+the 194-publication meta-analysis of Frey-Law & Avin [6], itself building on the foundational
+
+endurance curves of Rohmert [26]). Reperfusion multiplier r values from Looft et al. [4], with
+
+shoulder validated by [5].
+
+Table 1: Calibrated 3CC-r parameters. max = R/(F + R); rest-phase threshold mmianx =
+F/(F + Rr).
+
+Muscle Group             F [3]     R [3] r [4, 5] max mmainx                 Note [6]
+
+Shoulder (overhead)      0.01820 0.00168          15     8.45% 41.9%  Highest threshold
+
+Ankle (walking)          0.00589 0.00058          15     8.96% 40.4%  Rr  F
+
+Knee (lifting)           0.01500 0.00149          15     9.04% 40.2%  Heavy load
+
+Elbow (exion)            0.00912 0.00094          15     9.34% 39.3%  Moderate
+
+Trunk (extension)        0.00755 0.00075          15     9.04% 40.2%  Postural
+
+Hand/Grip (squeeze)      0.00980 0.00064          30     6.13% 33.8%  Fine motor
+
+Verication. Shoulder: R/(F + R) = 0.00168/(0.01820 + 0.00168) = 0.00168/0.01988 = 0.0845 = 8.45%
+(Frey-Law 2012 Table 1 col 6 independently confirms 8.45%).
+
+Shoulder theta_min_max under r=15: F/(F + Rr) = 0.01820/(0.01820 + 0.00168*15) = 0.01820/0.04340
+= 0.4194 = 41.9%.
+
+Ankle: 0.00058/(0.00589 + 0.00058) = 0.00058/0.00647 = 0.0896 = 8.96%.
+    delta_max values across the six muscles fall in a tight 6-9% band under the
+    corrected Frey-Law 2012 parameters; the muscles differ primarily in the Rr/F
+    ratio (shoulder 1.385, ankle 1.476, knee 1.490, elbow 1.547, trunk 1.490,
+    grip 1.959) — all > 1, so every muscle can overshoot theta_max under load. [6, 26].
+
+                                               4
+4 Constraint Inference: MMICRL
+
+To learn individual worker safety constraints from heterogeneous demonstrations, we use Multi-
+Modal Inverse Constrained Reinforcement Learning (MMICRL) [8]. MMICRL builds on Maxi-
+mum Entropy IRL [7], Inverse Constrained RL [9], and multi-modal latent variable imitation [10],
+operating within the Constrained Markov Decision Process (CMDP) framework [24] as applied
+to safe policy optimisation by Achiam et al. [11].
+
+4.1 Objective Function (Corrected)
+
+Denition 4.1 . (MMICRL Weighted Objective) Let z denote a latent variable representing
+
+agent type, and  a trajectory. The MMICRL objective is:
+
+        max  1 H[( )] - 2 H[( | z)] ,                         (9)
+
+          
+
+where:
+
+ H [( )]: marginal entropy of the policy over trajectories [7]. Maximised to ensure be-
+
+    havioural diversity across all agent types.
+
+ H [( | z)]: conditional entropy of trajectories given agent type [8, 10]. Minimised (via
+
+    the negative sign) to ensure behavioural consistency within each type.
+
+     1, 2 > 0: weighting coecients controlling the explorationspecialisation trade-o [8].
+
+Theorem 4.2 . (Decomposition of the Weighted Objective) The objective (9) decomposes as:
+
+        1 H[( )] - 2 H[( | z)] = 2 I( ; z) + (1 - 2) H[( )],  (10)
+
+where I( ; z) = H [( )] - H [( | z)] is the mutual information between trajectories and agent
+
+types.
+
+Proof. Starting from the denition of mutual information:
+
+        H[( )] = I( ; z) + H[( | z)].
+
+Substituting H[( | z)] = H[( )] - I( ; z) into (9):
+
+               1H[( )] - 2 H[( )] - I( ; z) = 1H[( )] - 2H[( )] + 2I( ; z)
+                                                             = 2 I( ; z) + (1 - 2) H[( )].
+
+Remark 4.3 . (Interpretation and the Mutual Information Claim) Previous versions claimed (9)
+
+was equivalent to maximising mutual information I ( ; z). This is correct only when 1 = 2,
+in which case the residual (1 - 2)H [( )] vanishes.
+
+    When 1 = 2, the objective jointly optimises two terms:
+
+   1. 2 I ( ; z): mutual information, promoting between-type separability and within-type coher-
+
+          ence.
+
+   2. (1 - 2) H [( )]: a marginal entropy bonus (if 1 > 2) or penalty (if 1 < 2).
+
+      Case analysis:
+
+     1 > 2: The objective rewards overall policy stochasticity beyond what mutual information
+
+          alone requires. This encourages broader state-space coverage but may introduce within-type
+          variability.
+
+             5
+     1 < 2: The objective penalises marginal entropy, preferring compact trajectory distribu-
+
+        tions. Risk of mode collapse if the penalty is too strong.
+
+     1 = 2: Pure mutual information maximisation. This is the recommended default for
+
+        HC-MARL unless domain-specic reasons dictate otherwise.
+
+Remark 4.4 . (Operational Recommendation) For HC-MARL, we recommend setting 1 =
+
+2 = , yielding:
+
+                                          max  I( ; z),                      (11)
+                                          
+
+under which the mutual information equivalence holds exactly. This maximises between-type
+
+diversity and within-type consistency without introducing spurious entropy biases. If 1 = 2 is
+
+used, the residual term must be reported and its eect on learned constraints analysed.
+
+5 Safety Filters: Ergonomic Control Barrier Functions
+
+Safety verication via barrier certicates originates with Prajna & Jadbabaie [16]. Ames et
+al. [14, 15] formalised Control Barrier Functions (CBFs) for real-time safety-critical control.
+
+Standard CBFs are insucient here because the control input C (t) does not appear in the rst
+derivative of the fatigue constraint (relative degree > 1 [25]), requiring Exponential CBFs [12]
+
+generalised by Xiao & Belta [13].
+
+5.1 Fatigue Ceiling Barrier (Primary)
+
+Denition 5.1 . (Fatigue Barrier) Dene the primary barrier function:
+
+                                  h(x) = max - MF  0,                        (12)
+
+where max  (0, 1) is the maximum allowable fatigue fraction.
+
+First derivative. Using (3):
+
+                            h = - dMF     = -F   � MA + Reff � MF .          (13)
+                                      dt
+
+The control input C (t) does not appear. Hence relative degree  2 [25, 12].
+
+Second derivative. Dierentiating (13) and substituting the ODEs (2)(3):
+
+h�  =  -F  dMA  +Reff  dMF  = -F  C-F MA  +Reff  F MA-Reff MF   = -F C+F 2MA+Reff F MA-Re2ff MF .
+            dt          dt
+
+                                                                             (14)
+
+The input C (t) appears with coecient -F . Since F > 0, the system has relative degree 2 with
+
+respect to h [12, 13, 25].
+
+5.2 ECBF Construction
+
+Following Nguyen & Sreenath [12], dene the composite barriers:
+
+                                  0(x) = h(x),                               (15)
+
+                                  1(x) = h + 1 h(x),                         (16)
+
+where 1 > 0 is a class-K design parameter [25, 12]. The ECBF condition enforces [12, 13]:
+
+                                  1(x, C)  -2 1(x),                          (17)
+
+                                            6
+where 2 > 0. Expanding 1 = h� + 1h and substituting (13)(14):
+
+-F C + F 2MA + Reff F MA - Re2ff MF + 1(-F MA + Reff MF )  -2 -F MA + Reff MF + 1(max - MF ) .
+
+control      state-dependent                                                    1
+                                                                                    (18)
+
+Solving for C (t) (since the coecient of C is -F < 0, the inequality ips):
+
+          1  F 2MA+Reff F MA-Re2ff MF +1(-F MA+Reff MF )+2 -F MA+Reff MF +1(max-MF )                  .
+C(t) 
+
+          F
+
+                                                                                (19)
+
+This is implemented as a CBF-QP [14]: given the nominal RL action Cnom, solve:
+
+             C(t) = arg min C - Cnom2 s.t. C satises (18) and (23) and C  0.    (20)
+
+                                     C
+
+5.3 Resting Floor Barrier (New)
+
+Denition 5.2 . (Resting Pool Barrier) To prevent the physiologically meaningless state MR < 0,
+
+dene:
+
+                              h2(x) = MR = 1 - MA - MF  0.                      (21)
+
+First derivative. Using (4):
+
+                              h 2  =  dMR  =  Reff  � MF  - C(t).               (22)
+                                       dt
+
+The input C (t) appears directly with coecient -1. Hence h2 has relative degree 1 [25, 14].
+    Since h2 has relative degree 1, a standard CBF suces [14, 15]:
+
+             h 2  -3 h2 = C(t)  Reff � MF + 3(1 - MA - MF ),                    (23)
+
+where 3 > 0 is a class-K design parameter [25]. This ensures that as MR  0, the maximum
+
+allowable neural drive is progressively restricted, preventing over-recruitment from an empty
+resting pool.
+
+Remark 5.3 . (Dual Barrier QP) The CBF-QP (20) now includes two constraints: (18) (fatigue
+
+ceiling, relative degree 2) and (23) (resting oor, relative degree 1). Both are linear in C , so the
+
+QP remains convex [27] and eciently solvable via CVXPY/OSQP [28].
+
+5.4 Safety Across Mode Transitions
+
+The 3CC-r system [4] switches between Reff = R (work) and Reff = Rr (rest). The ECBF
+(Sections 5.15.3) guarantees h  0 and h2  0 during work by ltering C (t). During rest,
+C = 0 and no lter is active. We must prove that the autonomous rest-phase dynamics preserve
+h(x) = max - MF  0.
+
+5.4.1 Rest-Phase Fatigue Overshoot
+
+When a worker stops exerting (C  0), the currently active motor units MA > 0 continue to
+transition into the fatigued pool at rate F (metabolic fatigue does not cease instantaneously [1,
+4]). If the reperfusion-enhanced recovery rate Rr is small relative to F , the fatigued fraction
+MF can increase transiently before it decreases. Quantitatively, from the rest-phase ODE:
+
+                              dMF          = F � MA - Rr � MF .                 (24)
+                               dt
+                                      C =0
+
+This is positive whenever MA/MF > Rr/F . For the shoulder (Rr/F = 1.385 under corrected
+Frey-Law 2012 parameters, and 0.596 under older mis-transcribed values), this condition is
+
+easily met during normal work, conrming that fatigue can rise during early rest.
+       Therefore, a proof of rest-phase safety must account for this overshoot explicitly.
+
+                                              7
+5.4.2 Design Requirement and Rest-Phase Safety Proof
+Denition 5.4 . (Rest-Phase Safety Threshold) For a muscle group with parameters (F, R, r),
+
+dene the rest-phase safety threshold:
+
+                             mmianx  =  F  F                                         (25)
+                                                  .
+
+                                           + Rr
+
+Assumption 5.5 . (Design Requirement) For each muscle group, the fatigue ceiling satises:
+
+                         max      mmianx   =  F  F                                   (26)
+                                                        .
+
+                                                 + Rr
+
+Table 2: Rest-phase parameters. Rr/F determines whether fatigue can transiently increase
+during rest. mmainx = F /(F + Rr) is the minimum safety threshold that guarantees rest-phase
+
+invariance (Theorem 5.7).
+
+           Muscle Group Rr [min-1] Rr/F Overshoot? mmainx
+
+           Shoulder          0.02520       1.385         Yes (> 1)  41.9%
+           Ankle             0.00870       1.476         Yes (> 1)  40.4%
+           Knee              0.02235       1.490         Yes (> 1)  40.2%
+           Elbow             0.01410       1.547         Yes (> 1)  39.3%
+           Trunk             0.01125       1.490         Yes (> 1)  40.2%
+           Grip              0.01920       1.959         Yes (> 1)  33.8%
+
+Remark 5.6. Assumption 5.5 states that the safety threshold must not be set below the maximum
+
+fatigue that could be reached from a fully depleted resting pool during autonomous rest. Under the
+corrected Frey-Law 2012 Table 1 parameters, every muscle group has Rr/F > 1, so rest-phase
+overshoot is possible for all six; the tightest floor sits at the grip (max  33.8%), while
+the shoulder floor is 41.9%. Values in the 40-42% band are consistent with ergonomic guidelines
+for heavy intermittent work [26, 6]. Production theta_max settings (shoulder 0.70, ankle 0.80,
+knee 0.60, elbow 0.45, trunk 0.65, grip 0.35) satisfy Assumption 5.5; only the grip has a
+narrow 1.2pp margin and is flagged for review.
+
+Theorem 5.7 (Rest-Phase . Safety) Under Assumption 5.5, if h(x(ts)) = max - MF (ts)  0
+
+and h2(x(ts)) = MR(ts)  0 at any work-to-rest transition time ts, then h(x(t))  0 for all
+t  ts during the rest phase.
+
+Proof. During rest, C(t) = 0 and Reff = Rr. The dynamics are autonomous.
+
+Step 1: MR is non-decreasing during rest. From (4) with C = 0:
+
+                             dMR  =  Rr    � MF      0.
+                              dt
+
+Hence MR(t)  MR(ts)  0 for all t  ts.
+
+Step 2: Nagumo invariance at the boundary MF = max. Suppose the trajectory reaches
+
+the boundary MF (t1) = max at some time t1  ts. By conservation (1):
+
+                         MA(t1) = 1 - MR(t1) - max.
+
+Substituting into (24):
+
+dMF    =F  1 - MR(t1) - max  - Rr � max = F          1 - MR(t1)     - (F + Rr) max.  (27)
+ dt
+     t1
+
+                                        8
+By Assumption 5.5, max  F /(F + Rr), so (F + Rr)max  F . Since MR(t1)  0 (from
+
+Step 1):
+
+               dMF     F - (F + Rr)max  0.
+                dt
+                    t1
+
+Equivalently, h (t1) = -dMF /dt|t1  0: the fatigue barrier is non-decreasing at the boundary.
+
+Step 3: Conclusion by Nagumo's theorem. The set S = {x : MF  max} satises
+
+the subtangentiality condition: at every boundary point MF = max, the velocity eld points
+inward (dMF /dt  0). By Nagumo's invariance theorem [22] (see also Blanchini [23] for a
+modern treatment in control), S is forward-invariant under the rest-phase dynamics. Since
+
+MF (ts)  max, we have MF (t)  max for all t  ts.
+
+Remark 5.8 . (Tightness of the Threshold) The bound mmainx = F /(F +Rr) is tight. At MR = 0,
+
+MA = 1 - max, and MF = max = F/(F + Rr):
+
+          dMF  = F (1 - max) - Rr max =  F � Rr           Rr � F  = 0.
+           dt                            F + Rr       -
+
+                                                         F + Rr
+
+So MF is exactly at an equilibrium. If max were set below F /(F + Rr), then dMF /dt > 0 at
+
+the boundary, and the safe set would be violated.
+
+5.4.3 Work-to-Rest Transition
+
+Proposition 5.9 . (Positive 1 Jump) At a work-to-rest switching instant ts, the composite
+
+barrier 1 experiences a positive jump:
+
+               1rest(ts) - 1work(ts) = R(r - 1)MF (ts) > 0.             (28)
+
+Proof. 1 = h + 1h = (-F MA + Reff MF ) + 1(max - MF ). Since h and MA are continuous
+but Reff jumps from R to Rr:
+
+          1rest - 1work = (Rr - R)MF (ts) = R(r - 1)MF (ts) > 0,
+
+because r > 1 and MF (ts) > 0 (the worker was active). Thus the ECBF feasibility condition
+1  0 is strengthened at the transition to rest.
+
+5.4.4 Rest-to-Work Transition
+
+Proposition 5.10 . (ECBF Feasibility at Resumption) After a rest period of sucient duration,
+
+1work(tr) > 0 at the rest-to-work transition, and the ECBF is feasible when work resumes. The
+
+minimum rest duration required satises:
+
+               t =  1 ln F MA(ts)                 +                     (29)
+                    F (tr)
+                                                   ,
+
+where (�)+ = max(�, 0), (tr) = R MF (tr) + 1(max - MF (tr)), and tr = ts + t is the
+resumption time. If t < t, then 1work(tr) < 0; the CBF-QP restricts C(tr) to a small
+value (or zero), and the ECBF condition drives 1 back toward non-negative values. Safety
+
+(MF  max) is maintained unconditionally by Theorem 5.7.
+
+Proof. At the rest-to-work transition at time tr > ts, Reff drops from Rr to R, causing 1 to
+decrease by R(r - 1)MF (tr). The post-transition value is:
+
+          1work(tr) = -F MA(tr) + RMF (tr) + 1(max - MF (tr)).
+
+                    9
+During rest, MA decays exponentially [1]: MA(t) = MA(ts)e-F (t-ts). Dene (tr) = RMF (tr) +
+1(max - MF (tr)) > 0 (positive since MF (tr)  max by Theorem 5.7 and R, 1 > 0). Then:
+
+                    1work(tr) = (tr) - F MA(ts)e-F t.
+
+Setting 1work(tr) = 0 and solving:
+
+                                    t = 1 ln F MA(ts) ,
+                                             F (tr)
+
+which is positive when F MA(ts) > (tr) (true for muscle groups with Rr/F < 1, e.g., shoulder).
+For t > t, 1work(tr) > 0 and the ECBF is feasible.
+
+Behaviour when t < t (early resumption). If the scheduler attempts to resume work
+
+before t, we have 1 < 0. The ECBF condition (17) requires 1  -21 > 0, which
+imposes a strict upper bound on C via (18). Whether this bound forces C  = 0 or permits a
+small positive C  depends on the state and on the gains 1, 2 [12, 13]:
+
+Suciently large : 
+          2 The ECBF upper bound on C is non-positive whenever 1 < 0,
+
+        forcing C  = 0 (mandatory rest). The QP automatically extends the rest period.
+
+Small : 
+        1, 2 The ECBF upper bound may permit a small positive C . In this regime,
+
+        1 recovers toward non-negative values through a combination of restricted (low-intensity)
+
+        work and continued decay of MA.
+
+    In both cases, the ECBF condition 1  -21 enforces monotonic recovery of 1 toward the
+feasible region [12]. Crucially, the primary safety guarantee MF  max holds unconditionally
+
+by Theorem 5.7 (Nagumo invariance [22, 23]), independently of the ECBF composite barrier
+
+state.
+
+Asymptotic guarantee. As t  , MA(tr)  0 and MF (tr)  0, so 1work  1max > 0.
+
+ECBF feasibility is always eventually restored.
+
+Remark 5.11 . (Implicit Nature of t) Equation (29) is implicit: (tr) depends on MF (tr),
+
+which evolves during rest and thus depends on t itself. A conservative (worst-case) upper
+bound on t is obtained by evaluating  at its minimum over MF  [0, max]. Since  =
+(R - 1)MF + 1max, the minimum occurs at MF = max when 1  R and at MF = 0 when
+1 < R, giving min = min(R, 1) max. Hence:
+
+          t  t =                         1     F MA(ts)   +                             (30)
+                                           ln
+                                         F min(R, 1) max   .
+
+This closed-form bound is sucient for implementation: resting for t guarantees 1  0 at
+
+resumption.
+
+Remark 5.12 (Numerical . Example) For the shoulder (F = 0.01820, R = 0.00168, Rr/F =
+
+1.385 under corrected Frey-Law 2012 Table 1) with the recommended 1 = 0.05 > R, so
+min(R, 1) = R and the bound reduces to t = (F -1 ln(F MA(ts)/(Rmax)))+. With
+MA(ts) = max = 8.45% and MF near max: t  23 minutes. For larger initial MA = 0.35
+(extreme case): t  1.7 hours. All six muscle groups have Rr/F > 1 under corrected
+parameters, so overshoot is possible for every muscle and the bound applies uniformly.
+
+5.4.5 QP Feasibility and Automatic Rest
+
+Remark 5.13 . (Mandatory Rest from QP Infeasibility) The CBF-QP (20) imposes two upper
+
+bounds on C(t)from (18) and (23)plus the constraint C  0. When the physiological state
+is severely degraded (high MF , low MR), both upper bounds may become non-positive, forcing
+C(t) = 0 (mandatory rest). This is a desirable feature: the QP [27, 28] automatically man-
+
+dates rest when no positive neural drive is safe, providing a third independent safety mechanism
+
+alongside the ECBF barrier and the NSWF disagreement utility (Section 6).
+
+                                         10
+6 Cooperative Task Allocation: Nash Social Welfare
+
+6.1 Terminological Correction
+
+The optimisation in this section is solved by a central planner, not by agents bargaining with each
+
+other. The correct framing is the Nash Social Welfare Function (NSWF), which maximises
+
+the product of agent surpluses. The NSWF is axiomatically connected to Nash's bargaining
+theory [17]: Kaneko & Nakamura [21] showed that the NSWF is the unique allocation rule
+
+satisfying Pareto optimality, symmetry, and independence of irrelevant alternatives for N -player
+
+settings, exactly extending Nash's 2-player axioms [17]. The disagreement point formulation
+draws on Nash's endogenous threat model [18] and the outside option principle of Binmore,
+Shaked & Sutton [20]. The log-transform for gradient-based computation follows Navon et
+al. [19].
+
+6.2 Denitions
+
+Denition 6.1 (Task . Assignment) Let I = {1, . . . , N } be the set of workers and J = {1, . . . , M }
+
+the set of productive tasks available in the current allocation round. The augmented task set in-
+cludes a rest option:
+
+                         J0 = J  {0}, where task 0 denotes rest (no work).
+
+A binary assignment aij = 1 if task j  J0 is assigned to worker i, and aij = 0 otherwise, subject
+
+to:
+
+(i) Each worker receives exactly one assignment: jJ0 aij = 1 for all i.
+(ii) Each productive task is assigned to at most one worker: iI aij  1 for all j  J .
+
+(iii) Multiple workers may rest simultaneously: no capacity constraint on task 0.
+
+Let U (i, j) denote the productivity utility of worker i performing task j  J . The rest option
+
+yields:
+
+                                 U (i, 0) = Di(MFi ) + ,  > 0 (small),                               (31)
+
+so that resting produces a surplus of exactly , ensuring the log argument remains well-dened.
+
+Denition 6.2 . (Divergent Disagreement Utility) The disagreement utility Di represents the
+
+value of the outside option (resting) for worker i [17, 20]:
+
+                                 Di(MFi  )  =    �  (MFi )2  ,   > 0.                                (32)
+                                                    1 - MFi
+
+Proposition 6.3 . (Properties of Di) The disagreement utility (32) satises:
+
+(P1) Di(0) = 0 (no premium when fresh).
+
+(P2) Di(MF ) > 0 for MF  (0, 1) (monotonically increasing).
+(P3) Di(MF )  + as MF  1- (innite cost at burnout).
+
+Proof. (P1): Di(0) =  � 0/1 = 0. 
+(P2): Dierentiating (32):
+
+         Di (MF  )  =    �    d  (MF )2  =  �    2MF (1 - MF ) + (MF )2  =  �  MF   (2  - MF   )  .
+                            dMF  1 - MF                  (1 - MF )2             (1  -   MF )2
+
+For MF  (0, 1): MF > 0, (2 - MF ) > 0, (1 - MF )2 > 0, so Di > 0. 
+
+(P3): As MF  1-, the numerator (MF )2  1 > 0 and the denominator (1 - MF )  0+, so
+
+Di  +. 
+
+                                                    11
+Remark 6.4 . (Low-Fatigue Regime) For MF  1: (1 - MF )-1  1, so Di   (MF )2. The
+
+disagreement utility recovers smooth quadratic sensitivity during routine operations, with the
+divergence activating only near the physiological limit.
+
+6.3 Allocation Objective
+
+Denition 6.5 . (Nash Social Welfare Objective) The central planner solves:
+
+                                 N                                          (33)
+
+                      max ln U (i, j(i)) - Di(MFi ) ,
+
+                      {aij } i=1
+
+where j(i)  J0 denotes the task assigned to worker i, subject to constraints (i)(iii) in Def-
+inition 6.1 and the surplus U (i, j) - Di(MFi ) > 0 for every assignment (guaranteed for rest by
+
+(31)).
+
+Dynamics. If worker i is fatigued (MFi high), then Di is large [20]. For the surplus U (i, j) - Di
+
+of a productive task to remain positive, the utility must exceed the fatigue premium (MFi )2/(1-
+MFi ) [17, 18]. When no productive task can pay this premium, the planner assigns worker i to
+rest (task 0), contributing ln()  0 to the objectivestrongly disfavoured but feasible. This
+
+handles all partial assignment scenarios: more workers than tasks (N > M ), more tasks than
+
+workers (N < M ), or individual workers too fatigued for any productive assignment.
+    As MFi  1, no nite U (i, j) can overcome Di  . This provides a mathematical guarantee
+
+against burnout, independent of the safety lter.
+
+Remark 6.6 . (Relationship to Nash Bargaining) For N = 2 with symmetric information, the
+
+NSWF solution coincides with the Nash Bargaining Solution [17]. For N > 2, the NSWF
+
+remains the unique rule satisfying the multi-player generalisation of Nash's axioms [21]. The
+
+use of Nash Social Welfare rather than Nash Bargaining is preferred for N > 2 centralised
+
+settings to avoid conating the welfare function with the 2-player cooperative game concept.
+
+7 Action-to-Neural-Drive Interface
+
+The four preceding modules operate at two levels of abstraction:
+
+Allocation layer   (NSWF, Section 6): Assigns discrete task j to worker i.
+
+Physiological layer   (3CC-r, ECBF, Sections 35): Operates on continuous neural drive
+
+C (t).
+
+The interface mapping connects these layers.
+
+7.1 Task-to-Load Mapping
+
+Each task j  J is characterised by a demand prole: a set of target loads across relevant muscle
+
+groups.
+
+Denition 7.1 . (Task Demand Prole) For task j involving muscle group g, dene:
+
+                          TL(j  )                 [0, 1],                   (34)
+                                 g
+
+the fraction of Maximum Voluntary Contraction (MVC) required from muscle group g during
+task j. Tasks requiring multiple muscle groups have a vector of demands TL(j) = (TL(j,g)1 , . . . , TL(j,g)K ).
+
+                                              12
+7.2 Neural Drive Controller
+
+Following the feedback controller structure of Xia & Frey-Law [2], the neural drive C (t) is
+
+determined by a feedback law that recruits motor units to meet the target load:
+
+            C(t) =    kp TL(t) - MA(t) +  if assigned (work phase),                    (35)
+                      0                   if resting,
+
+where kp > 0 is a proportional gain, and (�)+ = max(�, 0) ensures non-negative recruitment.
+The controller attempts to maintain MA(t)  TL(t) by recruiting from the resting pool when
+
+the active fraction falls below the target.
+
+Remark 7.2. In HC-MARL, the RL agent replaces the proportional controller with a learned
+
+policy (C | x, task) that outputs a continuous neural drive. The feedback law (35) serves as
+
+both the baseline controller and the behavioural prior from which MMICRL demonstrations are
+
+generated. The ECBF safety lter (20) then clips any proposed C(t) to the safe set, regardless
+
+of whether it comes from (35) or the RL policy.
+
+7.3 End-to-End Pipeline
+
+The complete pipeline for each allocation round proceeds as:
+
+1. State observation. Read xi(t) = [MRi , MAi , MFi ] for each worker i.
+
+Task allocation. 2.  Central planner solves (33) to assign tasks {j(i)}.
+
+Load translation. 3.  For each assigned workertask pair (i, j(i)), look up TL(j(i))g.
+
+Neural drive. 4.  RL policy (or baseline (35)) proposes Cnom(t).
+
+5. Safety ltering. CBF-QP (20) clips Cnom(t)  C(t).
+
+6. State update. Integrate ODEs (2)(4) with C(t).
+
+Repeat. 7.  Return to step 1 at the next allocation interval.
+
+                             13
+8 Summary of All Corrections
+
+# Issue              Previous Version              This Version
+
+1 MMICRLMI           Claimed 1H - 2H(�|z) =        Proved decomposition; equiva-
+        equivalence  I( ; z) for all 1, 2
+                                                   lence holds i 1 = 2; recom-
+                                                   mended 1 = 2
+
+2 Switched-mode      Used relative-degree-1 ar-    Nagumo invariance proof [22, 23]
+        safety                                     with explicit design requirement
+                     gument (h comparison);
+                                                   max  F /(F + Rr); numerical
+                     claimed Rr/F  1 for all
+
+                     muscles (false for shoulder: thresholds for all 6 muscle groups
+
+                     Rr/F = 0.60)
+
+3 Resting pool con- Not addressed; only MF  Added h2 = MR  0 as relative-
+
+straint              max guarded                   degree-1 CBF [14] in dual-barrier
+
+4 Nash Bargaining    Called centralised N -player  QP [27]
+                                                   Correctly identied as Nash So-
+
+                     allocation Nash Bargaining cial Welfare Function [21]; ax-
+
+                                                   iomatic connection to Nash [17]
+
+5 Action-to-C(t)     Absent                        preserved
+                                                   New Section 7: task demand pro-
+
+mapping                                            les, neural drive controller [2],
+
+                                                   end-to-end pipeline
+
+6 Assignment nota- ij :      undened subscript; aij  {0, 1}: standard assign-
+
+tion                 symbol overloaded with tra- ment variable;  reserved exclu-
+
+                     jectory  (Section 4)          sively for trajectories
+
+7 Utility notation   Uwork(ij ): utility of a bi- U (i, j): utility depends on the
+
+                     nary indicator (semantically workertask pair
+
+                     ill-typed)
+
+References
+
+  [1] Liu JZ, Brown RW, Yue GH. A dynamical model of muscle activation, fatigue, and recovery.
+        Biophysical Journal, 82(5):23442359, 2002.
+
+  [2] Xia T, Frey-Law LA. A theoretical approach for modeling peripheral muscle fatigue and
+        recovery. J. Biomechanics, 41(14):30463052, 2008.
+
+  [3] Frey-Law LA, Looft JM, Heitsman J. A three-compartment muscle fatigue model accurately
+        predicts joint-specic maximum endurance times. J. Biomechanics, 45(10):18031808, 2012.
+
+  [4] Looft JM, Herkert N, Frey-Law L. Modication of a three-compartment muscle fatigue
+        model to predict peak torque decline during intermittent tasks. J. Biomechanics, 77:1625,
+         2018.
+
+  [5] Looft JM, Frey-Law LA. Adapting a fatigue model for shoulder exion fatigue. J. Biome-
+        chanics, 106:109762, 2020.
+
+  [6] Frey-Law LA, Avin KG. Endurance time is joint-specic: A modelling and meta-analysis
+        investigation. Ergonomics, 53(1):109129, 2010.
+
+  [7] Ziebart BD, Maas AL, Bagnell JA, Dey AK. Maximum Entropy Inverse Reinforcement
+        Learning. Proc. 23rd AAAI, pp. 14331438, 2008.
+
+  [8] Qiao G, Liu G, Poupart P, Xu Z. Multi-Modal Inverse Constrained Reinforcement Learning
+        from a Mixture of Demonstrations. NeurIPS 2023, 2023.
+
+  [9] Malik S, Anwar U, Aghasi A, Ahmed A. Inverse Constrained Reinforcement Learning. Proc.
+        38th ICML, PMLR 139:73907399, 2021.
+
+                                   14
+[10] Li Y, Song J, Ermon S. InfoGAIL: Interpretable Imitation Learning from Visual Demon-
+        strations. NeurIPS 2017, pp. 38123822, 2017.
+
+[11] Achiam J, Held D, Tamar A, Abbeel P. Constrained Policy Optimization. Proc. 34th ICML,
+         PMLR 70:2231, 2017.
+
+[12] Nguyen Q, Sreenath K. Exponential Control Barrier Functions for enforcing high relative-
+        degree safety-critical constraints. 2016 ACC, pp. 322328, 2016.
+
+[13] Xiao W, Belta C. Control Barrier Functions for Systems with High Relative Degree. 2019
+        IEEE CDC, pp. 474479, 2019.
+
+[14] Ames AD, Xu X, Grizzle JW, Tabuada P. Control Barrier Function Based Quadratic Pro-
+        grams for Safety Critical Systems. IEEE Trans. Auto. Control, 62(8):38613876, 2017.
+
+[15] Ames AD, Coogan S, Egerstedt M, Notomista G, Sreenath K, Tabuada P. Control Barrier
+        Functions: Theory and Applications. 2019 ECC, pp. 34203431, 2019.
+
+[16] Prajna S, Jadbabaie A. Safety Verication of Hybrid Systems Using Barrier Certicates.
+        HSCC 2004, LNCS 2993, pp. 477492, 2004.
+
+[17] Nash JF. The Bargaining Problem. Econometrica, 18(2):155162, 1950.
+[18] Nash JF. Two-Person Cooperative Games. Econometrica, 21(1):128140, 1953.
+[19] Navon A, Shamsian A, Achituve I, et al. Multi-Task Learning as a Bargaining Game. Proc.
+
+        39th ICML, PMLR 162:1642816446, 2022.
+[20] Binmore K, Shaked A, Sutton J. An Outside Option Experiment. Quarterly J. Econ.,
+
+         104(4):753770, 1989.
+[21] Kaneko M, Nakamura K. The Nash Social Welfare Function. Econometrica, 47(2):423435,
+
+         1979.
+[22] Nagumo M. �ber die Lage der Integralkurven gew�hnlicher Dierentialgleichungen. Pro-
+
+        ceedings of the Physico-Mathematical Society of Japan, 24:272559, 1942.
+[23] Blanchini F. Set invariance in control. Automatica, 35(11):17471767, 1999.
+[24] Altman E. Constrained Markov Decision Processes. Chapman & Hall/CRC, 1999.
+[25] Khalil HK. Nonlinear Systems, 3rd ed. Prentice Hall, 2002.
+[26] Rohmert W. Ermittlung von Erholungspausen f�r statische Arbeit des Menschen. Interna-
+
+        tionale Zeitschrift f�r angewandte Physiologie einschlie�lich Arbeitsphysiologie, 18(2):123
+         164, 1960.
+[27] Boyd S, Vandenberghe L. Convex Optimization. Cambridge University Press, 2004.
+[28] Stellato B, Banjac G, Goulart P, Bemporad A, Boyd S. OSQP: An operator splitting solver
+        for quadratic programs. Mathematical Programming Computation, 12(4):637672, 2020.
+
+                                                                                            15
+

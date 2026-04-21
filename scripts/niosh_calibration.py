@@ -48,10 +48,14 @@ def horizontal_multiplier(h_cm: float) -> float:
 
 
 def vertical_multiplier(v_cm: float) -> float:
-    """VM = 1 - 0.003*|V-75|, V in [0, 175] cm. Returns 0 outside."""
+    """VM = 1 - 0.0031*|V-75|, V in [0, 175] cm. Returns 0 outside.
+
+    Coefficient verified verbatim against Waters et al. 1993 Appendix A
+    (Ergonomics 36(7) p.771): VM = (1 - (0.0031 |V - 75|)).
+    """
     if v_cm < 0.0 or v_cm > 175.0:
         return 0.0
-    return 1.0 - 0.003 * abs(v_cm - V_REF_CM)
+    return 1.0 - 0.0031 * abs(v_cm - V_REF_CM)
 
 
 def distance_multiplier(d_cm: float) -> float:

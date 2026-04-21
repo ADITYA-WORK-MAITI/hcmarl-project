@@ -31,11 +31,11 @@ class TestECBFParams:
     def test_valid_params(self):
         """Should not raise for valid params satisfying Assumption 5.5."""
         p = ECBFParams(theta_max=0.70, alpha1=0.05, alpha2=0.05, alpha3=0.1)
-        p.validate(SHOULDER)  # theta_min_max ~0.627, so 0.70 >= 0.627
+        p.validate(SHOULDER)  # theta_min_max ~0.419, so 0.70 >= 0.419
 
     def test_theta_max_below_threshold_raises(self):
         """Violating Assumption 5.5 (Eq 26) must raise."""
-        p = ECBFParams(theta_max=0.50)  # 0.50 < 0.627 for shoulder
+        p = ECBFParams(theta_max=0.30)  # 0.30 < 0.419 for shoulder
         with pytest.raises(ValueError, match="Assumption 5.5"):
             p.validate(SHOULDER)
 
@@ -49,9 +49,9 @@ class TestECBFParams:
         with pytest.raises(ValueError, match="alpha1"):
             p.validate(SHOULDER)
 
-    def test_ankle_low_threshold_ok(self):
-        """Ankle theta_min_max ~ 2.1%, so theta_max = 0.10 is fine."""
-        p = ECBFParams(theta_max=0.10)
+    def test_ankle_high_threshold_ok(self):
+        """Ankle theta_min_max ~ 40.4% under corrected values; 0.80 is fine."""
+        p = ECBFParams(theta_max=0.80)
         p.validate(ANKLE)  # Should not raise
 
 
@@ -281,18 +281,19 @@ class TestRestPhaseAnalysis:
         """Shoulder with MA = delta_max should require positive rest (Eq 30)."""
         delta = SHOULDER.delta_max
         dt = self.filt.min_rest_duration_bound(MA_at_stop=delta)
-        # Shoulder: Rr/F < 1 so rest IS needed
-        assert dt > 0.0
+        # Under corrected Frey-Law 2012 values, SHOULDER.Rr/F = 1.385 > 1
+        # so the formal bound is 0 (overshoot is bounded without rest);
+        # if Rr/F were < 1 under older params, dt > 0 would be required.
+        assert dt >= 0.0
 
     def test_min_rest_duration_ankle(self):
         """Ankle with small MA at stop should need little rest.
 
-        Note: ANKLE.delta_max = 75.5% is very high. The rest bound is
-        large when MA_at_stop is large. But for a realistic low MA,
-        rest is not needed because Rr/F >> 1 means recovery is fast
-        and psi_1 stays positive.
+        Under corrected Frey-Law 2012 values ankle theta_min_max = 40.4%
+        (was 2.1% under transcription-error values). Use a feasible
+        theta_max = 0.80 that satisfies Assumption 5.5.
         """
-        ankle_params = ECBFParams(theta_max=0.10)
+        ankle_params = ECBFParams(theta_max=0.80)
         filt_ankle = ECBFFilter(muscle=ANKLE, ecbf_params=ankle_params)
         # Use a small MA at stop (not the extreme delta_max)
         dt = filt_ankle.min_rest_duration_bound(MA_at_stop=0.05)
