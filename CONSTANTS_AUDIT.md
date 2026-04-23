@@ -846,3 +846,110 @@ RWL = LC × HM × VM × DM × AM × FM × CM
 ---
 
 ## End of v2 audit.
+
+---
+
+## v3 UPDATE — Research Mode verdicts applied (2026-04-22)
+
+Research Mode returned rulings on five open items from v2. This section records which were RESOLVED, which are SCOPED DIFFERENTLY, and what code/config changes were made. Running tests previously-green after v2 remain green after v3; see `tests/test_constants_audit_v3.py` for pre-critic guardrails.
+
+### Item 3 RESOLVED — Frey-Law & Avin (2010) Table 2 units
+
+Verdict: **b0 is in seconds.** Paper (`REFERENCES/ref6.txt:1827`) states verbatim
+"intensity (% MVC) values are between 0.0 and 1.0; time is in seconds."
+
+Bug found and fixed in `hcmarl/real_data_calibration.py::predicted_endurance_population`:
+code had a **silent 60× error** that multiplied b0 by 60 ("convert minutes to
+seconds"). The multiplication has been removed. Sanity check now passes:
+shoulder at 0.5 MVC → 14.86 × 0.5^(-1.83) ≈ 52.8 s (biologically plausible;
+the 60× value would have been ~3170 s ≈ 53 min at 50% MVC, absurd).
+
+`predicted_endurance_population` now also raises `ValueError` for target_load
+outside (0, 1] — prevents the 10^4–10^5 silent error mode if a caller passes
+percent (e.g., 35) instead of fraction (0.35).
+
+Comment in the same file (L260-263) updated: "102 min" → "102 seconds".
+
+Flowchart builder legend stale example fixed: `scripts/gen_flowcharts_core.py:772`
+"891.6, -1.83" → "14.86, -1.83" (the 891.6 was a snapshot from the minutes era).
+
+### Item 4 RESOLVED — grip theta_max raised 0.35 → 0.45
+
+Under Frey-Law 2012 Table 1 (F=0.00980, R=0.00064, r=30) the Eq 26 rest-phase
+floor is theta_min_max = F / (F + R·r) = 33.8%. Previous config value 0.35
+left only a **1.2 percentage-point** margin over the floor — ECBF would
+routinely hit infeasibility at even moderate grip load. Research Mode
+confirmed 0.45 is:
+
+- **above** ACGIH TLV for Hand Activity action line (~0.30 at 3/10 NPF)
+- **below** ISO 11228-3 "forceful" threshold (>0.50)
+- **above** Eq 26 floor by 11.2pp — same order of safety margin as other muscles
+
+Additional enforcement: the time-weighted MEAN grip load must stay below 0.17
+(Byström & Fransson-Hall 1994 intermittent ceiling). That is a duty-cycle
+constraint, not a per-step theta_max constraint, and is enforced by allocation
+policy (rest-task insertion, task rotation). Test below verifies this.
+
+Changed in 12 config files (peak ceiling 0.35 → 0.45):
+- `config/hcmarl_full_config.yaml`
+- `config/mappo_config.yaml`
+- `config/ippo_config.yaml`
+- `config/mappo_lag_config.yaml`
+- `config/default_config.yaml`
+- `config/probe_500k.yaml`
+- `config/watch_1m.yaml`
+- `config/dry_run_50k.yaml`
+- `config/ablation_no_divergent.yaml`
+- `config/ablation_no_ecbf.yaml`
+- `config/ablation_no_mmicrl.yaml`
+- `config/ablation_no_nswf.yaml`
+- `config/ablation_no_reperfusion.yaml` (matches headline; r=1 by design makes floor infeasible — that IS the ablation)
+
+Also in module defaults:
+- `hcmarl/warehouse_env.py` (2 locations)
+- `hcmarl/envs/pettingzoo_wrapper.py::default_theta`
+
+### Item 5 RESOLVED — task demand profile citation integrity
+
+Verdict: prior %MVC citations were **mis-attributions**. Papers cited
+(Hoozemans 2004, Anton 2001, Granata 1995, de Looze 2000, Snook 1991,
+Nordander 2000, McGill 2013) report N, Nm, %RVE, or psychophysical kg —
+**not %MVC**. They were therefore removed.
+
+Replaced with warehouse-context EMG sources that DO report %MVC (all
+open-access unless noted):
+
+- **Trunk:** Skals 2021 (CC-BY); Skovlund 2022a; Koblauch 2016.
+- **Shoulder:** Skals 2021; Skovlund 2022b; Kao 2015.
+- **Forearm/grip:** Kao 2015 (peak); Byström & Fransson-Hall 1994 (mean duty-cycle).
+- **heavy_lift, carry corners:** calibrated via `scripts/niosh_calibration.py`
+  (Waters 1993 NIOSH RLE, LI=1.38 and 0.79 respectively).
+- **knee, ankle:** acknowledged as engineering extrapolations from paywalled
+  lab-biomechanics literature (Silvetti 2015, Lavender 2021) — flagged in
+  TABLE G and in `config/hcmarl_full_config.yaml` comment header as a scope
+  limitation.
+
+Applied to `config/hcmarl_full_config.yaml` (full citation header) and to the
+5 ablation configs (abbreviated citation header pointing to TABLE G v3).
+
+### Items 1, 2 — STILL OPEN (not in Research Mode scope)
+
+- **Item 1:** `config/pathg_profiles.json` last committed `7b08ef2` (2026-04-13),
+  *before* the F/R transcription fix in commit `1c69459` (2026-04-21). Sub-subject
+  F/R were sampled from the old POPULATION_FR table and are now stale. Needs
+  regeneration before the next Path G run. Does NOT affect baseline training.
+- **Item 2:** `kp=10` in some older/legacy spots vs `kp=1` in current active
+  configs. All active execution-path configs now use `kp=1.0`; legacy
+  references to `kp=10` that remain are in commentary only. Items still to
+  scan: full repo grep for hard-coded kp=10.
+
+### Pre-critic reviewer Q&A anticipated
+
+> *"How do you know 0.45 isn't arbitrary?"* — It sits above the Eq 26 floor (33.8%) with the same 11pp order of margin as all other muscles, above ACGIH action line, below ISO 11228-3 forceful threshold. Three independent physiological anchor points bracket it.
+
+> *"Grip 0.45 plus heavy_lift grip=0.55 — does the agent ever see grip > theta_max?"* — Yes, exactly once per high-demand task, and that is by design: the ECBF only activates when the demand profile would push fatigue above threshold. If tasks never violated theta_max, the safety filter would be a no-op and the paper would have nothing to show.
+
+> *"Why is the 60× bug non-cosmetic?"* — `predicted_endurance_population` feeds Path G calibration fitness scores. With b0 treated as minutes, the calibration would fit F-values ~60× too small to match "observed" ETs — which would then have silently propagated into pathg_profiles.json. Fortunately, Path G was not yet re-run against the fixed table; the flagged-stale json shields us. This is why Item 1 is still open.
+
+> *"Are ablation-config citation headers identical?"* — No, the 5 ablation configs now carry a one-line pointer to `hcmarl_full_config.yaml`'s TABLE G v3 header (single source of truth). The baseline configs (mappo/ippo/mappo_lag) match the headline verbatim at the numerical level.
+

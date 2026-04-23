@@ -18,7 +18,8 @@ class WarehousePettingZoo:
                  dt=1.0, max_steps=480, kappa=1.0, ecbf_mode="on",
                  action_mode="discrete", disagreement_type="divergent",
                  muscle_params_override=None,
-                 ecbf_alpha1=0.05, ecbf_alpha2=0.05, ecbf_alpha3=0.1):
+                 ecbf_alpha1=0.05, ecbf_alpha2=0.05, ecbf_alpha3=0.1,
+                 n_types=0, worker_type_assignments=None):
         """
         Args:
             action_mode: "discrete" (default) — agent selects a task index.
@@ -68,10 +69,14 @@ class WarehousePettingZoo:
         #   trunk 40.2%    | grip 33.8%.
         # Margins vs the defaults below:
         #   shoulder 28.1pp | ankle 39.6pp | knee 19.8pp | elbow  5.7pp |
-        #   trunk    24.8pp | grip   1.2pp.
-        # The tight grip margin is DECISION-PENDING (see CONSTANTS_AUDIT F6):
-        # raise to 0.45 to match elbow, or keep 0.35 and tolerate ECBF
-        # aggressiveness on grip-intensive tasks.
+        #   trunk    24.8pp | grip  11.2pp.
+        # Grip raised 0.35->0.45 per CONSTANTS_AUDIT v3 (Research Mode
+        # 2026-04-22): 0.35 gave only 1.2pp margin above theta_min_max=33.8%
+        # and caused ECBF near-infeasibility on grip-intensive tasks. 0.45
+        # sits below the >50% "forceful" threshold of ISO 11228-3 / ACGIH TLV
+        # and gives Frey-Law & Avin 2010 ET of ~2 min. Time-weighted mean
+        # grip must remain below 0.17 (Byström & Fransson-Hall 1994
+        # intermittent ceiling) -- enforced by duty cycle.
         # Rr/F (recovery bandwidth per unit fatigue) under corrected values:
         #   shoulder 1.38 | ankle 1.48 | knee 1.49 | elbow 1.55 |
         #   trunk    1.49 | grip 1.96.
@@ -81,7 +86,7 @@ class WarehousePettingZoo:
         # state confinement.
         default_theta = {
             "shoulder": 0.70, "ankle": 0.80, "knee": 0.60,
-            "elbow": 0.45, "trunk": 0.65, "grip": 0.35,
+            "elbow": 0.45, "trunk": 0.65, "grip": 0.45,
         }
         if theta_max is None:
             self.theta_max_per_worker = {i: dict(default_theta) for i in range(n_workers)}
@@ -136,12 +141,33 @@ class WarehousePettingZoo:
         self.possible_agents = [f"worker_{i}" for i in range(n_workers)]
         self.agents = list(self.possible_agents)
 
+        # Option X: per-worker type conditioning (MMICRL).
+        # When n_types > 0, each worker's observation is augmented with a
+        # one-hot encoding of its MMICRL-discovered type. This lets the
+        # policy condition on worker type when type discovery is informative.
+        # When n_types == 0 (default), behavior is identical to legacy env.
+        #
+        # worker_type_assignments: {worker_idx: type_idx} or None.
+        #   Missing entries default to type 0 (safe fallback — policy sees
+        #   one-hot(0) = [1, 0, ..., 0], equivalent to single-type behavior).
+        self.n_types = int(n_types)
+        self.worker_type_assignments = dict(worker_type_assignments or {})
+        for i in range(n_workers):
+            self.worker_type_assignments.setdefault(i, 0)
+        if self.n_types > 0:
+            for i, z in self.worker_type_assignments.items():
+                if not (0 <= int(z) < self.n_types):
+                    raise ValueError(
+                        f"worker {i} type {z} out of range [0, {self.n_types})"
+                    )
+
         # C-8.A: In continuous mode, obs includes task assignment one-hot
+        type_oh_dim = self.n_types if self.n_types > 0 else 0
         if self.action_mode == "continuous":
-            # obs = [MR,MA,MF]*muscles + task_one_hot(n_tasks) + step_norm
-            self.obs_dim = self.n_muscles * 3 + self.n_tasks + 1
+            # obs = [MR,MA,MF]*muscles + task_one_hot(n_tasks) + step_norm + [type_oh]
+            self.obs_dim = self.n_muscles * 3 + self.n_tasks + 1 + type_oh_dim
         else:
-            self.obs_dim = self.n_muscles * 3 + 1
+            self.obs_dim = self.n_muscles * 3 + 1 + type_oh_dim
         self.global_obs_dim = n_workers * (self.n_muscles * 3) + 1
 
         # Per-worker current task assignment (for continuous mode, set by allocator)
@@ -165,6 +191,15 @@ class WarehousePettingZoo:
             task_oh[min(task_idx, self.n_tasks - 1)] = 1.0
             obs.extend(task_oh.tolist())
         obs.append(self.current_step / self.max_steps)
+        # Option X: append per-worker type one-hot when type-conditioning is on.
+        # Under MI collapse the caller is expected to pass n_types=1 or set
+        # every worker's type to 0, so this one-hot is constant and the
+        # policy learns to ignore it (graceful degenerate single-type behavior).
+        if self.n_types > 0:
+            type_oh = np.zeros(self.n_types, dtype=np.float32)
+            z_i = self.worker_type_assignments.get(worker_idx, 0)
+            type_oh[int(z_i)] = 1.0
+            obs.extend(type_oh.tolist())
         return np.array(obs, dtype=np.float32)
 
     def _get_global_obs(self):

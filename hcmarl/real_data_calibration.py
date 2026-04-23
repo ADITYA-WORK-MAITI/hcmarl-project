@@ -257,10 +257,11 @@ def compute_dynamic_isometric_report(
         ratio = F_dyn / F_iso
 
         # Cross-validation 1: What isometric ET would this F predict?
-        # At 35% MVC, isometric shoulder ET ≈ 14.86 * 0.35^{-1.83} min
-        # ≈ 14.86 / 0.145 ≈ 102 min (from Frey-Law & Avin 2010 power model)
-        # With the dynamic F, the predicted ET will be << 60s — confirming
-        # these F values cannot represent isometric contractions.
+        # At 35% MVC, Frey-Law & Avin 2010 Table 2 shoulder power-model gives
+        # ET = 14.86 * 0.35^{-1.83} approx 102 seconds (=1.7 min) -- this is
+        # the isometric population mean. Dynamic-calibrated F values predict
+        # much shorter ET at the same load, confirming they cannot represent
+        # isometric contractions (units/caption: ref6.txt:1827).
         et_dynamic_F_at_35 = predict_endurance_time(
             F_dyn, R_fixed, r, target_load=0.35, max_time=600.0,
         )
@@ -436,32 +437,45 @@ TASK_TO_MVIC_FRACTION = {
 # Population-level endurance distributions from Frey-Law & Avin (2010)
 # -----------------------------------------------------------------------
 
-# Power-model: ET = b0 * (%MVC)^b1, where %MVC is 0-1, ET in seconds
+# Power-model: ET (seconds) = b0 * (MVC_fraction)^b1, MVC_fraction in [0, 1].
 # From Table 2 of Frey-Law & Avin (2010), Ergonomics 53(1):109-129
-# b0 in minutes, converted to seconds (* 60)
+# (PMC2891087, PMID 20069487). Table 2 caption (ref6.txt:1827) verbatim:
+#   "intensity (% MVC) values are between 0.0 and 1.0; time is in seconds."
+# Sanity check: shoulder at 0.5 MVC -> 14.86 * 0.5^{-1.83} approx 52.8 s (plausible).
+# Per-joint R^2 reported by the paper: elbow 0.915, shoulder 0.897, trunk 0.885,
+# ankle 0.884, knee 0.789, grip 0.748 (grip fit is the weakest -- flag in paper).
 
 ENDURANCE_POWER_MODEL = {
-    'shoulder': {'b0': 14.86 * 60, 'b1': -1.83},
-    'ankle':    {'b0': 34.71 * 60, 'b1': -2.06},
-    'knee':     {'b0': 19.38 * 60, 'b1': -1.88},
-    'elbow':    {'b0': 17.98 * 60, 'b1': -2.21},
-    'grip':     {'b0': 33.55 * 60, 'b1': -1.61},
-    'trunk':    {'b0': 22.69 * 60, 'b1': -2.27},
+    'shoulder': {'b0': 14.86, 'b1': -1.83},
+    'ankle':    {'b0': 34.71, 'b1': -2.06},
+    'knee':     {'b0': 19.38, 'b1': -1.88},
+    'elbow':    {'b0': 17.98, 'b1': -2.21},
+    'grip':     {'b0': 33.55, 'b1': -1.61},
+    'trunk':    {'b0': 22.69, 'b1': -2.27},
 }
 
 
 def predicted_endurance_population(
     muscle: str, target_load: float
 ) -> float:
-    """Population-mean endurance time from Frey-Law & Avin (2010).
+    """Population-mean endurance time from Frey-Law & Avin (2010) Table 2.
 
     Args:
         muscle: Muscle group name.
-        target_load: %MVC as fraction (0-1).
+        target_load: %MVC as fraction in [0, 1] (NOT as percent 0-100).
 
     Returns:
         Expected endurance time in seconds.
+
+    Raises:
+        ValueError: If target_load is outside [0, 1] -- silent 10^4-10^5
+            error mode if percent is passed instead of fraction.
     """
+    if not 0.0 < target_load <= 1.0:
+        raise ValueError(
+            f"target_load must be MVC fraction in (0, 1], got {target_load}. "
+            "Did you pass percent (e.g., 35) instead of fraction (0.35)?"
+        )
     params = ENDURANCE_POWER_MODEL[muscle]
     return params['b0'] * (target_load ** params['b1'])
 

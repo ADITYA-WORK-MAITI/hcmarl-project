@@ -48,12 +48,17 @@ METHODS = {
 # ---------------------------------------------------------------------------
 
 def _write_run_state(path, global_step, episode_count, cost_ema, best_reward,
-                     theta_max, seed, method):
+                     theta_max, seed, method,
+                     n_types=0, worker_type_assignments=None):
     """Persist everything the policy checkpoint does NOT contain.
 
     Paired with an agent.save() call so a Colab runtime disconnect can be
     resumed without losing step counters, RNG state, or the theta_max the
     policy was trained against (which may come from MMICRL).
+
+    n_types and worker_type_assignments are added for Option X (type-
+    conditioned policy). They default to 0 / None so older checkpoints
+    (written before Option X) still round-trip through _load_run_state.
     """
     import random as _random
     state = {
@@ -64,6 +69,8 @@ def _write_run_state(path, global_step, episode_count, cost_ema, best_reward,
         "theta_max": theta_max,
         "seed": int(seed),
         "method": method,
+        "n_types": int(n_types),
+        "worker_type_assignments": dict(worker_type_assignments or {}),
         "rng_np": np.random.get_state(),
         "rng_torch": torch.get_rng_state(),
         "rng_torch_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
@@ -322,7 +329,7 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     # Resume: if run_state is present, its theta_max takes priority over
     # a freshly-run MMICRL. Guarantees the resumed env has the same
     # thresholds the saved policy was trained against.
-    from hcmarl.utils import build_per_worker_theta_max
+    from hcmarl.utils import build_per_worker_theta_max, build_per_worker_theta_max_from_F
     config_theta_defaults = env_cfg.get("theta_max", {}) or {}
     if resume_state is not None and resume_state.get("theta_max") is not None:
         theta_max = resume_state["theta_max"]
@@ -330,12 +337,49 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
               f"{resume_state.get('global_step', 0):,})")
     else:
         mmicrl_cfg = cfg.get("mmicrl", {})
-        rescale = bool(mmicrl_cfg.get("rescale_to_floor", True))
-        mi_thresh = float(mmicrl_cfg.get("mi_collapse_threshold", 0.01))
-        theta_max = build_per_worker_theta_max(
-            mmicrl_results, config_theta_defaults, n_workers, method,
-            rescale_to_floor=rescale, mi_collapse_threshold=mi_thresh,
-        )
+        # Dispatch on ceiling_source: legacy 'mmicrl_rescale' (default),
+        # 'F_anchored' (Method 1, per-worker F-standardized), or
+        # 'config_only' (flat config, no personalization).
+        ceiling_source = str(mmicrl_cfg.get("ceiling_source", "mmicrl_rescale"))
+        if method != "hcmarl":
+            # Baselines always take the flat config defaults.
+            theta_max = config_theta_defaults
+        elif ceiling_source == "config_only":
+            theta_max = config_theta_defaults
+        elif ceiling_source == "F_anchored":
+            # Build per-worker (F, R, r) tuples for each config muscle.
+            # Until Commit B wires pathg profiles into the env, all workers
+            # share the config muscle_groups values, so F_anchored degenerates
+            # to config default (correct fallback).
+            muscle_groups = env_cfg.get("muscle_groups", {}) or {}
+            worker_F_R_r_per_muscle = {}
+            for m in config_theta_defaults:
+                mg = muscle_groups.get(m)
+                if mg is None:
+                    raise ValueError(
+                        f"muscle '{m}' listed in environment.theta_max but "
+                        f"missing from environment.muscle_groups."
+                    )
+                F, R, r = float(mg['F']), float(mg['R']), float(mg['r'])
+                worker_F_R_r_per_muscle[m] = [(F, R, r)] * n_workers
+            alpha = float(mmicrl_cfg.get("F_anchor_alpha", 0.05))
+            z_clip = float(mmicrl_cfg.get("F_anchor_z_clip", 2.0))
+            epsilon = float(mmicrl_cfg.get("F_anchor_epsilon", 0.005))
+            theta_max = build_per_worker_theta_max_from_F(
+                worker_F_R_r_per_muscle, config_theta_defaults, n_workers,
+                alpha=alpha, z_clip=z_clip, epsilon=epsilon,
+            )
+            print(f"F-anchored ceilings: alpha={alpha}, z_clip={z_clip}, "
+                  f"epsilon={epsilon}. (Homogeneous F across workers -> "
+                  f"degenerates to config default; pathg per-worker F wiring "
+                  f"in next pass.)")
+        else:
+            rescale = bool(mmicrl_cfg.get("rescale_to_floor", True))
+            mi_thresh = float(mmicrl_cfg.get("mi_collapse_threshold", 0.01))
+            theta_max = build_per_worker_theta_max(
+                mmicrl_results, config_theta_defaults, n_workers, method,
+                rescale_to_floor=rescale, mi_collapse_threshold=mi_thresh,
+            )
         if mmicrl_results and method == "hcmarl" and isinstance(theta_max, dict) and any(
             isinstance(v, dict) for v in theta_max.values()
         ):
@@ -391,6 +435,68 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     ecbf_alpha2 = ecbf_cfg.get("alpha2", 0.05)
     ecbf_alpha3 = ecbf_cfg.get("alpha3", 0.1)
 
+    # ------------------------------------------------------------------
+    # Option X: per-worker type-conditioning from MMICRL
+    # ------------------------------------------------------------------
+    # Policy is conditioned on each worker's MMICRL-discovered type
+    # (one-hot appended to the observation) when
+    # type_conditioning.enabled=True in config.
+    #
+    # On MI collapse (MI < mi_collapse_threshold): fall back to n_types=1
+    # with every worker assigned type 0. Observation gains a constant
+    # one-hot [1.0] and the policy learns to ignore it — graceful
+    # degenerate single-type behavior.
+    #
+    # On resume: restore from run_state if present, else recompute from
+    # the fresh MMICRL results. This guarantees resumed env has the same
+    # obs_dim the saved policy was trained against.
+    # ------------------------------------------------------------------
+    n_types_effective = 0
+    worker_type_assignments = None
+    tc_cfg = cfg.get("type_conditioning", {}) or {}
+    tc_enabled = bool(tc_cfg.get("enabled", False))
+    if resume_state is not None and resume_state.get("n_types", 0) > 0:
+        n_types_effective = int(resume_state["n_types"])
+        worker_type_assignments = dict(
+            resume_state.get("worker_type_assignments") or {}
+        )
+        # Keys may have serialised as strings; coerce back to int.
+        worker_type_assignments = {int(k): int(v) for k, v in worker_type_assignments.items()}
+        print(f"Resume: restored type-conditioning n_types={n_types_effective}, "
+              f"assignments from run_state.")
+    elif method == "hcmarl" and tc_enabled and mmicrl_results is not None:
+        mi = float(mmicrl_results.get("mutual_information", 0.0))
+        mi_thresh = float(cfg.get("mmicrl", {}).get("mi_collapse_threshold", 0.01))
+        if mi < mi_thresh:
+            n_types_effective = 1
+            worker_type_assignments = {i: 0 for i in range(n_workers)}
+            print(f"Option X: MI={mi:.4f} < {mi_thresh} (collapse) -> n_types=1, "
+                  f"every worker z=0. Policy trains as single-type.")
+        else:
+            proportions = mmicrl_results.get("type_proportions", [])
+            n_disc = int(mmicrl_results.get("n_types_discovered", len(proportions) or 1))
+            n_types_effective = n_disc
+            if proportions and len(proportions) == n_types_effective:
+                counts = np.round(np.array(proportions, dtype=float) * n_workers).astype(int)
+                diff = n_workers - int(counts.sum())
+                if diff != 0:
+                    counts[int(np.argmax(counts))] += diff
+                worker_type_assignments = {}
+                w_idx = 0
+                for t_idx, count in enumerate(counts):
+                    for _ in range(int(count)):
+                        if w_idx < n_workers:
+                            worker_type_assignments[w_idx] = t_idx
+                            w_idx += 1
+                while w_idx < n_workers:
+                    worker_type_assignments[w_idx] = 0
+                    w_idx += 1
+            else:
+                worker_type_assignments = {i: i % n_types_effective
+                                           for i in range(n_workers)}
+            print(f"Option X: MI={mi:.4f} >= {mi_thresh} -> n_types={n_types_effective}, "
+                  f"assignments={worker_type_assignments}")
+
     # Environment
     env = WarehousePettingZoo(
         n_workers=n_workers, max_steps=max_steps,
@@ -399,6 +505,8 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
         disagreement_type=disagreement_type,
         muscle_params_override=muscle_params_override,
         ecbf_alpha1=ecbf_alpha1, ecbf_alpha2=ecbf_alpha2, ecbf_alpha3=ecbf_alpha3,
+        n_types=n_types_effective,
+        worker_type_assignments=worker_type_assignments,
     )
     obs_dim = env.obs_dim
     global_obs_dim = env.global_obs_dim
@@ -762,6 +870,8 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
                     os.path.join(ckpt_dir, "run_state.pt"),
                     global_step, episode_count, cost_ema, best_reward,
                     theta_max, seed, method,
+                    n_types=n_types_effective,
+                    worker_type_assignments=worker_type_assignments,
                 )
             break
 
@@ -789,6 +899,8 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
                     os.path.join(ckpt_dir, "run_state.pt"),
                     global_step, episode_count, cost_ema, best_reward,
                     theta_max, seed, method,
+                    n_types=n_types_effective,
+                    worker_type_assignments=worker_type_assignments,
                 )
             # Mirror to Drive (survives Colab runtime disconnect).
             # Logger flushes CSV every episode, so copy after each checkpoint.
@@ -818,6 +930,8 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
             os.path.join(ckpt_dir, "run_state.pt"),
             global_step, episode_count, cost_ema, best_reward,
             theta_max, seed, method,
+            n_types=n_types_effective,
+            worker_type_assignments=worker_type_assignments,
         )
 
     # Final Drive mirror

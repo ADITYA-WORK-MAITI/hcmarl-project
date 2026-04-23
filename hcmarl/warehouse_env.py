@@ -72,9 +72,14 @@ class SingleWorkerWarehouseEnv(gym.Env):
         self.task_names = list(self.tasks.keys())
         self.n_tasks = len(self.task_names)
 
-        # Safety thresholds per muscle (must satisfy Eq 26: theta_max >= F/(F+R*r))
+        # Safety thresholds per muscle (must satisfy Eq 26: theta_max >= F/(F+R*r)).
+        # Under Frey-Law 2012 Table 1 (verified): shoulder theta_min_max=41.9%,
+        # elbow 39.3%, grip 33.8% (r=30). Grip raised 0.35->0.45 per
+        # CONSTANTS_AUDIT v3 (Research Mode): 11.2pp margin, Byström &
+        # Fransson-Hall 1994 mean-intermittent ceiling 17% MVC must be
+        # respected by duty cycle (checked in reward_functions).
         self.theta_max = theta_max or {
-            "shoulder": 0.70, "elbow": 0.45, "grip": 0.35,  # grip: theta_min_max=19.5% with r=30 (Table 1)
+            "shoulder": 0.70, "elbow": 0.45, "grip": 0.45,
         }
 
         # C-6.A: Build per-muscle ECBFFilter instances
@@ -273,7 +278,7 @@ class WarehouseMultiAgentEnv:
         self.n_tasks = len(self.task_names)
 
         self.theta_max = theta_max or {
-            "shoulder": 0.70, "elbow": 0.45, "grip": 0.35,  # grip: theta_min_max=19.5% with r=30 (Table 1)
+            "shoulder": 0.70, "elbow": 0.45, "grip": 0.45,  # grip raised 0.35->0.45: theta_min_max=33.8% (Frey-Law 2012 Table 1 corrected), 11.2pp margin
         }
 
         # C-6.A: Build per-muscle ECBFFilter instances (shared across workers)

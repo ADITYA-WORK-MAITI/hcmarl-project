@@ -18,10 +18,21 @@ def test_mappo_instantiation():
     assert m.actor is not None; print("  PASS: test_mappo_instantiation")
 
 def test_ippo_instantiation():
+    """IPPO (parameter-shared variant per Yu et al. 2022 benchmark).
+    Single shared actor + single shared critic with local-obs input."""
     import torch
     from hcmarl.agents.ippo import IPPO
     ip = IPPO(obs_dim=19, n_actions=6, n_agents=4)
-    assert len(ip.actors) == 4; print("  PASS: test_ippo_instantiation")
+    assert ip.actor is not None, "shared actor missing"
+    assert ip.critic is not None, "shared critic missing"
+    assert ip.n_agents == 4
+    # Decentralised-critic property: critic input dim must equal obs_dim
+    # (local obs), not global_state dim. That's what distinguishes IPPO
+    # from MAPPO.
+    first_layer = next(ip.critic.net.children())
+    assert first_layer.in_features == 19, \
+        f"IPPO critic must take local obs (dim=19), got {first_layer.in_features}"
+    print("  PASS: test_ippo_instantiation")
 
 def test_mappo_lag_instantiation():
     import torch

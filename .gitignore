@@ -81,3 +81,13 @@ paper/*.fls
 
 # ---------- Scratch text extractions (session artifacts, not source) ----------
 _*_text.txt
+
+# ---------- Experiment result folders (build artifacts, never commit) ----------
+Results 0/
+Results 1/
+Results 2/
+Results 3/
+Results 4/
+*.bak
+logs_exp1_mirror/
+checkpoints_exp1_mirror/

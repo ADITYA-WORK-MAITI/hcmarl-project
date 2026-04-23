@@ -19,13 +19,14 @@ environment:
     knee: 0.60
     elbow: 0.45
     trunk: 0.65
-    grip: 0.35   # raised: theta_min_max=32.7% with r=15
+    grip: 0.45   # CONSTANTS_AUDIT v3: theta_min_max=33.8% under corrected Frey-Law 2012 F,R (r=30); margin 11.2pp
   tasks:
-    heavy_lift:     {shoulder: 0.45, ankle: 0.10, knee: 0.40, elbow: 0.30, trunk: 0.50, grip: 0.55}  # Granata 1995, Hoozemans 2004
-    light_sort:     {shoulder: 0.10, ankle: 0.05, knee: 0.05, elbow: 0.15, trunk: 0.10, grip: 0.20}  # Nordander 2000
-    carry:          {shoulder: 0.25, ankle: 0.20, knee: 0.25, elbow: 0.20, trunk: 0.30, grip: 0.45}  # Snook & Ciriello 1991
-    overhead_reach: {shoulder: 0.55, ankle: 0.05, knee: 0.10, elbow: 0.35, trunk: 0.15, grip: 0.30}  # Anton et al. 2001
-    push_cart:      {shoulder: 0.20, ankle: 0.15, knee: 0.20, elbow: 0.15, trunk: 0.25, grip: 0.40}  # Hoozemans 2004, de Looze 2000
+    # Citations: see config/hcmarl_full_config.yaml TABLE G v3 (Skals 2021, Skovlund 2022a/b, Kao 2015, Koblauch 2016; NIOSH RLE calibration for heavy_lift/carry). knee/ankle are engineering extrapolations.
+    heavy_lift:     {shoulder: 0.45, ankle: 0.10, knee: 0.40, elbow: 0.30, trunk: 0.50, grip: 0.55}
+    light_sort:     {shoulder: 0.10, ankle: 0.05, knee: 0.05, elbow: 0.15, trunk: 0.10, grip: 0.20}
+    carry:          {shoulder: 0.25, ankle: 0.20, knee: 0.25, elbow: 0.20, trunk: 0.30, grip: 0.45}
+    overhead_reach: {shoulder: 0.55, ankle: 0.05, knee: 0.10, elbow: 0.35, trunk: 0.15, grip: 0.30}
+    push_cart:      {shoulder: 0.20, ankle: 0.15, knee: 0.20, elbow: 0.15, trunk: 0.25, grip: 0.40}
     rest:           {shoulder: 0.00, ankle: 0.00, knee: 0.00, elbow: 0.00, trunk: 0.00, grip: 0.00}
 
 training:

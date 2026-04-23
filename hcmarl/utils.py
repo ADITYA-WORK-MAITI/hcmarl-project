@@ -165,6 +165,108 @@ def _get_floor(config_theta_defaults, muscle):
     return float(config_theta_defaults[muscle])
 
 
+def build_per_worker_theta_max_from_F(
+    worker_F_R_r_per_muscle,
+    config_theta_defaults,
+    n_workers,
+    alpha=0.05,
+    z_clip=2.0,
+    epsilon=0.005,
+):
+    """F-anchored per-worker safety ceilings.
+
+    Computes theta_max[worker][muscle] from the worker's calibrated F
+    relative to the population F distribution for that muscle. This is an
+    alternative to MMICRL-rescale-based ceilings (see
+    ``build_per_worker_theta_max``) that:
+
+      1. Has the correct safety sign: higher F -> lower ceiling (stricter).
+      2. Does not depend on demonstration trajectory percentiles (no ICRL
+         category-error exposure).
+      3. Degenerates cleanly when F is homogeneous (sd == 0 -> z == 0 ->
+         every worker gets the config default).
+      4. Is bounded by Eq 26 per-worker floor and the config default, so
+         no rescaling can produce infeasible ceilings.
+
+    Formula per worker w, per muscle m (mapping from calibrated F to ceiling):
+        z_{w,m}       = clip((F_{w,m} - mean(F_m)) / sd(F_m), -z_clip, z_clip)
+        raw_{w,m}     = config_default[m] - alpha * z_{w,m}
+        floor_{w,m}   = F_{w,m} / (F_{w,m} + R_{w,m} * r_m)   [Eq 26, per worker]
+        theta[w,m]    = clip(raw_{w,m}, floor_{w,m} + epsilon, config_default[m])
+
+    Args:
+        worker_F_R_r_per_muscle: dict {muscle_name: [(F_w, R_w, r_m) for w in 0..n_workers-1]}
+            Per-worker physiological parameters for each muscle. Length of
+            each muscle's list must equal n_workers.
+        config_theta_defaults: {muscle: float} from
+            config.environment.theta_max (biomech-literature ceilings).
+        n_workers: Number of workers in the env.
+        alpha: Standardised-F-to-ceiling slope. Default 0.05 (5pp ceiling
+            delta per 1 SD of F). Tuned by the synthetic K=3 validation.
+        z_clip: Outlier clamp on standardised F. Default 2.0.
+        epsilon: Margin above the per-worker Eq 26 floor. Default 0.005.
+
+    Returns:
+        {'worker_0': {muscle: theta, ...}, 'worker_1': {...}, ...}
+
+    Raises:
+        ValueError: if a muscle in the config is missing from
+            worker_F_R_r_per_muscle, or if list lengths do not equal n_workers.
+    """
+    # Validate inputs up front — fail loudly, not silently.
+    for m in config_theta_defaults:
+        if m not in worker_F_R_r_per_muscle:
+            raise ValueError(
+                f"muscle '{m}' missing from worker_F_R_r_per_muscle. "
+                f"Every config muscle must have per-worker (F, R, r) tuples. "
+                f"Got: {sorted(worker_F_R_r_per_muscle.keys())}."
+            )
+        if len(worker_F_R_r_per_muscle[m]) != n_workers:
+            raise ValueError(
+                f"muscle '{m}' has {len(worker_F_R_r_per_muscle[m])} worker "
+                f"parameter tuples but n_workers={n_workers}."
+            )
+
+    theta_max = {}
+    for w in range(n_workers):
+        theta_max[f"worker_{w}"] = {}
+        for m, fr_list in worker_F_R_r_per_muscle.items():
+            F_w, R_w, r_m = fr_list[w]
+            floor = _get_floor(config_theta_defaults, m)
+
+            # Population stats for this muscle across workers.
+            F_all = np.array([x[0] for x in fr_list], dtype=float)
+            mu = float(F_all.mean())
+            sd = float(F_all.std(ddof=0))
+
+            # Standardise; if no spread (homogeneous F), z == 0 and the
+            # worker inherits the config default.
+            if sd < 1e-12:
+                z = 0.0
+            else:
+                z = float((F_w - mu) / sd)
+            z = float(np.clip(z, -z_clip, z_clip))
+
+            # Sign convention: higher F -> lower ceiling (stricter safety).
+            raw_ceiling = floor - alpha * z
+
+            # Per-worker Eq 26 floor (biomech feasibility on this worker's F).
+            denom = F_w + R_w * r_m
+            eq26_floor = (F_w / denom) if denom > 0 else floor
+
+            # One-sided design: never looser than the ergonomics-literature
+            # default. EXCEPT when the worker's own Eq 26 floor already exceeds
+            # that default (physiological edge case) -- feasibility wins.
+            upper = max(float(floor), eq26_floor + epsilon)
+
+            theta_max[f"worker_{w}"][m] = float(np.clip(
+                raw_ceiling,
+                eq26_floor + epsilon,
+                upper,
+            ))
+    return theta_max
+
+
 def _rescale_into_feasibility(theta_per_type, config_theta_defaults, mi=None,
                               mi_collapse_threshold=0.01):
     """Map raw per-type, per-muscle MMICRL thetas into [floor_m, 1.0]

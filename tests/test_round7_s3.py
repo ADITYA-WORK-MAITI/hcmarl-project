@@ -193,31 +193,28 @@ class TestS11:
 
 
 # =====================================================================
-# S-17: grip theta_max raised from 0.25 to 0.35
+# S-17: grip theta_max raised 0.25 -> 0.35 -> 0.45 (CONSTANTS_AUDIT v3)
 # =====================================================================
 
 class TestS17:
 
     def test_pettingzoo_grip_default(self):
-        """PettingZoo env must default grip theta_max to 0.35, not 0.25."""
+        """PettingZoo env must default grip theta_max to 0.45 per CONSTANTS_AUDIT
+        v3 (Eq 26 floor 33.8% under Frey-Law 2012 F,R with r=30; 0.35 left
+        only 1.2pp margin, raised to 0.45 for ~11.2pp)."""
         from hcmarl.envs.pettingzoo_wrapper import WarehousePettingZoo
         env = WarehousePettingZoo(n_workers=2, max_steps=5)
-        # Check the default theta
         grip_theta = env.theta_max.get("grip")
-        assert grip_theta == 0.35, \
-            f"grip theta_max default is {grip_theta}, expected 0.35"
+        assert grip_theta == 0.45, \
+            f"grip theta_max default is {grip_theta}, expected 0.45"
 
     def test_grip_margin_positive(self):
         """Grip margin (theta_max - theta_min_max) must be positive (Assumption 5.5).
 
-        Under CONSTANTS_AUDIT v2 corrected Frey-Law 2012 Table 1 values
-        (grip F=0.00980, R=0.00064, r=30), grip theta_min_max = 33.8%.
-        Production theta_max = 0.35 gives only a 1.2pp margin — flagged as
-        F6 DECISION-PENDING in CONSTANTS_AUDIT. This test pins the
-        constraint that the margin stays positive (Assumption 5.5 holds);
-        the separate question of whether 1.2pp is robust enough for ECBF
-        stability is tracked in the audit and resolved by a follow-up
-        theta_max raise.
+        Under Frey-Law 2012 Table 1 values (grip F=0.00980, R=0.00064, r=30),
+        theta_min_max = 33.8%. After CONSTANTS_AUDIT v3 the production
+        theta_max = 0.45 gives an 11.2pp margin -- same order as other
+        muscles. This test is the numeric floor for that margin.
         """
         from hcmarl.envs.pettingzoo_wrapper import WarehousePettingZoo
         from hcmarl.three_cc_r import get_muscle
@@ -241,11 +238,10 @@ class TestS17:
             "Old grip default 0.25 still present in pettingzoo_wrapper.py"
 
     def test_consistent_with_warehouse_env(self):
-        """Grip default must match warehouse_env.py."""
+        """Grip default must match warehouse_env.py (both 0.45 post-v3)."""
         from hcmarl.envs.pettingzoo_wrapper import WarehousePettingZoo
         pz_env = WarehousePettingZoo(n_workers=2, max_steps=5)
-        # warehouse_env uses 0.35 for grip
-        assert pz_env.theta_max["grip"] == 0.35
+        assert pz_env.theta_max["grip"] == 0.45
 
 
 # =====================================================================

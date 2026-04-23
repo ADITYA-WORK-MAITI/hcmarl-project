@@ -22,27 +22,63 @@ environment:
     #   shoulder 41.9% | ankle 40.4% | knee 40.2% | elbow 39.3% |
     #   trunk 40.2%    | grip 33.8%.
     # theta_max MUST satisfy theta_max >= theta_min_max (Eq 26).
-    # %MVC ceilings are engineering design choices informed by Rohmert 1960
-    # intermittent-work tradition; NIOSH RLE calibration (heavy_lift, carry)
-    # in scripts/niosh_calibration.py.
+    # %MVC peak ceilings are engineering design values in the peak-force
+    # region of ACGIH TLV for Hand Activity (NPF~3/10 action line, higher
+    # for rest-punctuated work) and below the >50% "forceful" threshold of
+    # ISO 11228-3. NIOSH RLE calibration (heavy_lift, carry) in
+    # scripts/niosh_calibration.py. Time-weighted mean grip must stay below
+    # 0.17 (Byström & Fransson-Hall 1994 intermittent ceiling) -- enforced
+    # by duty cycle, not theta_max alone.
     shoulder: 0.70   # margin 28.1pp over theta_min_max
     ankle: 0.80      # margin 39.6pp
     knee: 0.60       # margin 19.8pp
     elbow: 0.45      # margin  5.7pp
     trunk: 0.65      # margin 24.8pp
-    grip: 0.35       # margin  1.2pp -- DECISION-PENDING (CONSTANTS_AUDIT F6)
+    grip: 0.45       # margin 11.2pp -- raised from 0.35 (CONSTANTS_AUDIT v3)
 
-  # Task demand profiles: fraction of MVC per muscle group
-  # Sources: Granata & Marras 1995 (trunk lifting), de Looze et al. 2000 (shoulder pushing),
-  #   Hoozemans et al. 2004 (shoulder/grip cart pushing), Snook & Ciriello 1991 (carry/lift),
-  #   Nordander et al. 2000 (light repetitive work), Anton et al. 2001 (overhead reach),
-  #   McGill et al. 2013 (trunk stabilisation)
+  # Task demand profiles: fraction of MVC per muscle group per task.
+  # PER-MUSCLE %MVC SOURCES (warehouse/grocery-handling EMG literature,
+  # all open-access unless noted; see CONSTANTS_AUDIT.md TABLE G v3):
+  #   Trunk (erector spinae longissimus):
+  #     - Skals et al. 2021 Applied Ergonomics 92:103340 (CC-BY) — 17
+  #       supermarket workers, 43-71% MVC across lift heights.
+  #     - Skovlund et al. 2022a IJERPH 19(5):3030 — 64 workers, 95th-pctile
+  #       %MVC stratified by height and load mass.
+  #     - Koblauch 2016 Dan Med J 63(4):B5233 — baggage handlers, stooped
+  #       lifts (treats observed >100% EMGmax as MVIC underestimate, not
+  #       supra-maximal).
+  #   Shoulder (upper trapezius / deltoid):
+  #     - Skals 2021 — trapezius descendens 47-59% MVC, high-shelf lifts.
+  #     - Skovlund et al. 2022b Sci Rep 12:934 — 75 workers x 13 tasks,
+  #       neck/shoulder %MVC by department.
+  #     - Kao et al. 2015 PLOS ONE 10(10):e0140792 — push/pull trapezius
+  #       35-54% MVC (only open-access clean push/pull table we found).
+  #   Forearm / grip:
+  #     - Kao 2015 — flexor/extensor digitorum 32-63% MVC during push/pull.
+  #     - PEAK ceiling: grip theta_max=0.45 (ACGIH TLV for Hand Activity
+  #       peak-force region; below ISO 11228-3 "forceful" >50%).
+  #     - MEAN ceiling: time-weighted mean grip MUST stay <0.17 MVC (Byström
+  #       & Fransson-Hall 1994 Human Factors 36(1):158-171, seven-subject
+  #       physiological-criterion study) -- enforced by duty cycle.
+  #   Knee, Ankle:
+  #     - NO freely-accessible warehouse-context %MVC source exists for
+  #       these muscle groups. Values below are engineering extrapolations
+  #       from laboratory lifting-biomechanics literature (Silvetti 2015
+  #       Work 51:261-271 [paywalled]; Lavender 2021 Applied Ergonomics
+  #       97:103532 [paywalled]). Acknowledged as a scope limitation.
+  #   Heavy_lift and carry corners:
+  #     - Calibrated via scripts/niosh_calibration.py (Waters et al. 1993
+  #       Ergonomics 36(7):749-776, NIOSH RLE, LI=1.38 and 0.79 resp.).
+  # PAPERS PREVIOUSLY CITED HERE (Hoozemans 2004, Anton 2001, Granata 1995,
+  # de Looze 2000, Snook 1991, Nordander 2000, McGill 2013) DO NOT report
+  # %MVC — they report N, Nm, %RVE, or psychophysical kg. Removed per
+  # Research Mode verification 2026-04-22.
   tasks:
-    heavy_lift:     {shoulder: 0.45, ankle: 0.10, knee: 0.40, elbow: 0.30, trunk: 0.50, grip: 0.55}  # Granata 1995, Hoozemans 2004
-    light_sort:     {shoulder: 0.10, ankle: 0.05, knee: 0.05, elbow: 0.15, trunk: 0.10, grip: 0.20}  # Nordander et al. 2000
-    carry:          {shoulder: 0.25, ankle: 0.20, knee: 0.25, elbow: 0.20, trunk: 0.30, grip: 0.45}  # Snook & Ciriello 1991
-    overhead_reach: {shoulder: 0.55, ankle: 0.05, knee: 0.10, elbow: 0.35, trunk: 0.15, grip: 0.30}  # Anton et al. 2001
-    push_cart:      {shoulder: 0.20, ankle: 0.15, knee: 0.20, elbow: 0.15, trunk: 0.25, grip: 0.40}  # Hoozemans 2004, de Looze 2000
+    heavy_lift:     {shoulder: 0.45, ankle: 0.10, knee: 0.40, elbow: 0.30, trunk: 0.50, grip: 0.55}
+    light_sort:     {shoulder: 0.10, ankle: 0.05, knee: 0.05, elbow: 0.15, trunk: 0.10, grip: 0.20}
+    carry:          {shoulder: 0.25, ankle: 0.20, knee: 0.25, elbow: 0.20, trunk: 0.30, grip: 0.45}
+    overhead_reach: {shoulder: 0.55, ankle: 0.05, knee: 0.10, elbow: 0.35, trunk: 0.15, grip: 0.30}
+    push_cart:      {shoulder: 0.20, ankle: 0.15, knee: 0.20, elbow: 0.15, trunk: 0.25, grip: 0.40}
     rest:           {shoulder: 0.00, ankle: 0.00, knee: 0.00, elbow: 0.00, trunk: 0.00, grip: 0.00}
 
 training:
@@ -73,6 +109,7 @@ algorithm:
   critic_hidden_dim: 128
 
 ecbf:
+  enabled: true        # EXP1 CHECK 3: HCMARL must have ECBF ON (safety filter live)
   alpha1: 0.05
   alpha2: 0.05
   alpha3: 0.1
@@ -115,3 +152,46 @@ mmicrl:
   use_fixed_theta: false
   rescale_to_floor: true
   mi_collapse_threshold: 0.01
+
+  # ---------------------------------------------------------------------
+  # ceiling_source: how per-worker theta_max is computed (Method selection)
+  # ---------------------------------------------------------------------
+  #   "mmicrl_rescale" (default, legacy): consume MMICRL theta_per_type
+  #       (90th-pctile MF per type) and rescale into [floor, 1]. On Path G
+  #       MI collapses to 0 and every worker gets the config floor. Sign
+  #       convention is inverted for fast fatiguers (Attack alpha) — see
+  #       CONSTANTS_AUDIT v3 / rescaling discussion.
+  #   "F_anchored" (recommended): compute per-worker theta_max by
+  #       standardising each worker's calibrated fatigue rate F against
+  #       the population F distribution and applying a one-sided
+  #       reduction: higher F -> stricter ceiling; below-mean F gets the
+  #       config default (never relaxed). Bounded by Eq 26 feasibility.
+  #       Does NOT depend on MMICRL's theta_per_type output (resolves
+  #       Attacks alpha, beta, gamma). MMICRL is still run for type
+  #       discovery / MI diagnostic.
+  #   "config_only": ignore MMICRL entirely; every worker gets the flat
+  #       config default. Diagnostic/ablation option.
+  ceiling_source: mmicrl_rescale     # backward-compat default; set to
+                                     # "F_anchored" for corrected-sign safety.
+  F_anchor_alpha: 0.05               # ceiling delta per 1 SD of F (Method 1)
+  F_anchor_z_clip: 2.0               # outlier clamp on standardised F
+  F_anchor_epsilon: 0.005            # margin above per-worker Eq 26 floor
+
+# ---------------------------------------------------------------------
+# Option X: per-worker type-conditioned policy
+# ---------------------------------------------------------------------
+# When enabled, each worker's observation is augmented with a one-hot
+# encoding of its MMICRL-discovered latent type z. The policy/critic see
+# the augmented obs and can condition behavior on z. Only applies to
+# HCMARL; baselines (MAPPO/IPPO/MAPPO-Lag) ignore the flag.
+#
+# MI-collapse fallback: when MMICRL mutual_information < mmicrl.mi_collapse_threshold
+# (default 0.01), every worker is assigned type 0 and obs gains a constant
+# one-hot [1.0]; the policy learns to ignore it (graceful single-type
+# behavior). This keeps obs_dim stable across runs and is the correct
+# degenerate case on Path G real data (see CONSTANTS_AUDIT discussion:
+# K=5 found by NLL but MI=0 -> not modal).
+#
+# Default: disabled for backward compatibility. Flip to true to activate.
+type_conditioning:
+  enabled: false
