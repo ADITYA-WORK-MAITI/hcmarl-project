@@ -7,7 +7,7 @@
 
 This is **Experiment 1** in the user's numbered experiment plan. It supersedes
 `RUNBOOK_BASELINES.md`: that runbook covered baselines-only on L4. This one
-covers HCMARL + 3 baselines on **L40S + 60 vCPU**, with parameter-shared IPPO
+covers HCMARL + 3 baselines on **L4 + 50 vCPU**, with parameter-shared IPPO
 and results delivered to the top-level `Results 1/` folder.
 
 ---
@@ -20,8 +20,8 @@ and results delivered to the top-level `Results 1/` folder.
 - Config files: `config/{hcmarl_full,mappo,ippo,mappo_lag}_config.yaml`
 - Launcher: `scripts/run_baselines.py --methods hcmarl mappo ippo mappo_lag`
   (same launcher; we simply include hcmarl in the filter this time)
-- Hardware: **L40S GPU (48 GB VRAM), 60 vCPUs, Rs 102/hr**
-- `--max-parallel 8` (8 seeds concurrent; rationale in §4 STEP 8)
+- Hardware: **L4 GPU (48 GB VRAM), 50 vCPUs, Rs 98/hr**
+- `--max-parallel 6` (6 seeds concurrent; rationale in §4 STEP 8)
 - Logs target: `logs/{hcmarl,mappo,ippo,mappo_lag}/seed_{0..9}/training_log.csv`
 - **Final deliverable**: the top-level `Results 1/` folder containing every
   CSV, summary JSON, MMICRL result, checkpoint metadata, and aggregation
@@ -42,7 +42,7 @@ and results delivered to the top-level `Results 1/` folder.
 
 ```
 You are the VM-side Claude for the HC-MARL Experiment 1 headline run on an
-E2E L40S GPU node (2026-04-24). This paste IS your full starting instruction.
+E2E L4 GPU node (2026-04-25). This paste IS your full starting instruction.
 
 Your complete briefing is at /root/hcmarl_project/RUNBOOK_EXP1.md on this
 VM. Read every line of that file top to bottom. Do not skim, do not skip,
@@ -84,14 +84,14 @@ If ANY of the 8 checks above fails, STOP, post the failing check, wait.
 After reading, execute STEPs 1-13 of RUNBOOK_EXP1.md continuously, in
 order, without asking for confirmation between steps:
 
-  STEP 1   hardware sanity (expect L40S, >=48 GB VRAM, 60 vCPUs)
+  STEP 1   hardware sanity (expect L4 or better, >=24 GB VRAM, >=48 vCPUs)
   STEP 2   python3.12 venv
   STEP 3   torch from cu124 (fall back to cu121)
   STEP 4   pip install -r requirements.txt
   STEP 5   pytest -q  (pass: 0 failed)
   STEP 6   the EIGHT pre-flight checks above
   STEP 7   create tmux session `exp1`
-  STEP 8   launch: 4 methods x 10 seeds, --max-parallel 8, --fresh-logs
+  STEP 8   launch: 4 methods x 10 seeds, --max-parallel 6, --fresh-logs
   STEP 9   status report every 20 minutes (format in §5)
   STEP 10  when grid finishes, post the exit summary (§6)
   STEP 11  CSV audit must pass before standing down
@@ -133,7 +133,7 @@ and then wait.
 | Agent | Owns | Forbidden |
 |---|---|---|
 | **LOCAL** (laptop) | scope decisions, git state, RUNBOOK edits, scp pull, node destruction | direct SSH execution on VM |
-| **VM** (Claude Code on L40S) | bootstrap, 8 pre-flight checks, tmux launch, 20-min status reports, minor §8 fixes, CSV audit, `Results 1/` assembly | scope decisions, editing anything under hcmarl/ source, git commits, destroying the node, running anything after STEP 13 |
+| **VM** (Claude Code on L4) | bootstrap, 8 pre-flight checks, tmux launch, 20-min status reports, minor §8 fixes, CSV audit, `Results 1/` assembly | scope decisions, editing anything under hcmarl/ source, git commits, destroying the node, running anything after STEP 13 |
 | **USER** | E2E dashboard, SSH, git clone before claude launches, paste between sessions, scp pull `Results 1/`, destroy node | running training outside tmux |
 
 ---
@@ -144,7 +144,7 @@ and then wait.
   - **IPPO rewritten as parameter-shared** (PS-IPPO, Yu et al. 2022 MAPPO
     benchmark variant). Single shared actor + single shared critic; the
     critic takes **local obs** (not global state), preserving IPPO's
-    decentralised-critic identity. CPU SPS: 465. L40S projection: 2000+.
+    decentralised-critic identity. CPU SPS: 465. L4 projection: ~1300-1800.
   - **Fail-fast env-section guard** in `scripts/train.py` — process dies
     at startup if `environment.{muscle_groups,theta_max,tasks}` is empty.
   - **`--fresh-logs` flag** on `scripts/run_baselines.py` wipes
@@ -158,13 +158,15 @@ and then wait.
   constant with its source PDF and page number).
 - Test suite: 0 failed on laptop (pytest 2026-04-23).
 
-**Budget reality (L40S on-demand, Rs 102/hr):**
-- 4 methods × 10 seeds × 2M steps × ~0.5ms/step on L40S ≈ 4400 run-seconds each
-- Total serial: 40 × 4400s = 49 hours → **Rs ~5,000 if run serial**
-- With `--max-parallel 8`: wall-clock ≈ 6-8 hours → **Rs ~620-820**
+**Budget reality (L4 on-demand, Rs 98/hr):**
+- 4 methods × 10 seeds × 2M steps × ~0.7ms/step on L4 ≈ 5500 run-seconds each
+  (L4 is ~1.2-1.5x slower per step than L40S; CPU rollouts still dominate
+  so the gap is smaller than raw TFLOPS would suggest)
+- Total serial: 40 × 5500s = 61 hours → **Rs ~6,000 if run serial**
+- With `--max-parallel 6`: wall-clock ≈ 8-12 hours → **Rs ~780-1,180**
 - Per-run kill-switch: `--budget-inr 1500`. Per-run, not total.
-- **Hard total stop: Rs 2,000.** If E2E dashboard shows spend exceeding that,
-  STOP and escalate.
+- **Hard total stop: Rs 2,000** (user's total EXP1 budget). If E2E dashboard
+  shows spend exceeding that, STOP and escalate immediately.
 
 ---
 
@@ -218,8 +220,10 @@ free -h
 df -h /root
 ```
 
-Pass criteria: **NVIDIA L40S**, VRAM free ≥ 48 GiB, ≥ 60 vCPUs, RAM free ≥ 100 GiB,
-disk free ≥ 200 GiB. Report to user regardless.
+Pass criteria: **NVIDIA L4** (or better), VRAM free ≥ 24 GiB, ≥ 48 vCPUs, RAM
+free ≥ 100 GiB, disk free ≥ 200 GiB. Target machine spec (E2E rented node):
+L4 / 50 vCPU / 220 GB RAM / 48 GB VRAM / 12 / 250 GB SSD / R: 60000 W: 30000.
+Report to user regardless.
 
 ### STEP 2 — [VM] Create the venv
 
@@ -400,9 +404,9 @@ tmux send-keys -t exp1 "python scripts/run_baselines.py \
   --methods hcmarl mappo ippo mappo_lag \
   --device cuda \
   --fresh-logs \
-  --max-parallel 8 \
+  --max-parallel 6 \
   --budget-inr 1500 \
-  --cost-per-hour 102.0 \
+  --cost-per-hour 98.0 \
   2>&1 | tee 'Results 1/_exp1_run.log'" Enter
 ```
 
@@ -420,21 +424,28 @@ immediately `Ctrl-C` and STOP.
 - `--methods hcmarl mappo ippo mappo_lag` — all four in one grid. Filter is
   explicit so if experiment_matrix.yaml adds a method later it won't
   silently join.
-- `--device cuda` — L40S.
+- `--device cuda` — L4.
 - `--fresh-logs` — **NON-NEGOTIABLE**. Wipes `logs/{method}/` +
   `checkpoints/{method}/` before launching. Physical prevention against the
   2026-04-20 "append-on-matching-header" bug. Without this flag, STOP.
-- `--max-parallel 8` — **8 concurrent seeds**. Rationale:
-  - 60 vCPUs / 7 threads-per-process ≈ 8.5 processes; round down to 8.
+- `--max-parallel 6` — **6 concurrent seeds**. Rationale:
+  - Prior calibration point: 3-way on L4 with 25 vCPUs = 8.3 vCPUs per
+    process, and it ran cleanly. That is the ground truth.
+  - Scaling honestly to 50 vCPUs while holding vCPUs-per-process constant:
+    50 / 8.3 = 6.0 processes. Not 7, not 8.
+  - 7-way on 50 vCPUs would give 7.1 vCPUs per process — TIGHTER than the
+    validated baseline. That is oversubscription: BLAS threads thrash,
+    per-seed SPS drops, wall-clock gets LONGER not shorter, and slow seeds
+    risk tripping the `--budget-inr 1500` kill-switch spuriously.
   - BLAS thread cap: launcher auto-sets `OMP_NUM_THREADS=total_vcpus/max_parallel`
-    = 60/8 = 7, which is a reasonable sweet spot for matmul + env stepping.
-  - L40S 48 GB VRAM / ~500 MB per process = 96-way headroom, so GPU memory
-    is not the constraint.
-  - 3-way on L4 with 25 vCPUs worked; scaling to 8-way on L40S/60-vCPU
-    maintains the same CPU-per-process ratio.
-  - Expected wall-clock at 8-way: ~2.5-4 hr (was ~13 hr at 3-way on L4).
+    = 50/6 ≈ 8, matching the L4/25-vCPU per-process thread count exactly.
+  - L4 48 GB VRAM / ~500 MB per process = 96-way headroom, so GPU memory
+    is not the constraint on this machine.
+  - Expected wall-clock at 6-way on L4: ~8-12 hr (vs ~13 hr for the prior
+    baselines-only 3-way run; parallelism doubled, but 4 methods × 10 seeds
+    is ~4.4x more runs than baselines-only × 3 seeds).
 - `--budget-inr 1500` — per-run kill-switch; does not cap total.
-- `--cost-per-hour 102.0` — L40S on-demand. **Do not omit; kill-switch
+- `--cost-per-hour 98.0` — L4 on-demand at E2E. **Do not omit; kill-switch
   math depends on it.**
 - `tee Results 1/_exp1_run.log` — launcher stdout mirror.
 
@@ -452,7 +463,7 @@ Do NOT alter seed list — 10 seeds locked in the matrix.
 Runs done / in-flight / pending:   <done>/<inflight>/<pending>  (of 40)
 Current SPS (rolling 50 ep):       <sps>
 ETA to grid completion:            ~<Hh:MMm>
-Wall-clock spend so far:           Rs ~<amount>  (@ Rs 102/hr)
+Wall-clock spend so far:           Rs ~<amount>  (@ Rs 98/hr)
 lazy_agent trips since start:      <count>
 budget_tripped events:             <count>
 pytest state:                      green (STEP 5) — no re-run
@@ -679,7 +690,7 @@ Prevention: `--fresh-logs` flag + STEP 6 CHECK 5. STEP 8 ALWAYS uses
 ### 6.3 IPPO 50-60 SPS (the slow-baseline bug, fixed in EXP1)
 Cause: per-agent separate networks → n_agents CUDA launches per step.
 Fix: parameter-shared IPPO (this runbook). Verified 465 SPS on CPU, expect
-2000+ SPS on L40S.
+~1300-1800 SPS on L4.
 
 ### 6.4 HCMARL MMICRL MI-collapse (NOT a failure)
 On real WSD4FEDSRM data, MMICRL returns K with MI≈0 (continuum, no modes).
