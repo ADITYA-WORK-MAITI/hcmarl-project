@@ -810,6 +810,13 @@ On the laptop, after VM replies `EXP1 complete. Standing by.`:
 Replace `<VM_IP>` with the IP from the E2E dashboard. `<KEY>` is your
 SSH private key (default `~/.ssh/id_ed25519`).
 
+All three pulls land in `/c/Users/admin/Downloads/`. After the three pulls
+succeed you move each folder wherever you want on the laptop — the user
+will manage placement. The VM side only guarantees that `Results 1/`,
+`logs/`, and `checkpoints/` on the VM each carry the complete training
+artefacts (because `logs/` and `checkpoints/` on the VM are symlinks that
+point INTO `Results 1/`, so pulling any of the three gives the same bytes).
+
 ### 11.a Primary pull — one folder gets EVERYTHING
 
 Because STEP 7 symlinked both `logs/` and `checkpoints/` inside
@@ -818,32 +825,30 @@ Because STEP 7 symlinked both `logs/` and `checkpoints/` inside
 - every checkpoint_*.pt, checkpoint_best.pt, checkpoint_final.pt, run_state.pt
 - the frozen configs snapshot, provenance, aggregation, launcher log, index
 
-**Use `-L` on rsync (or the default scp -r which follows symlinks on
-Linux) so the remote symlinks are DEREFERENCED into real files locally.**
-This is important: if you don't dereference, you end up with dangling
-symlinks on the laptop because `Results 1/logs -> Results 1/logs` is
-only meaningful inside the VM's directory layout.
+`Results 1/logs/` and `Results 1/checkpoints/` are real directories on
+the VM (they are the symlink *targets*, not the symlinks themselves).
+Rsync and scp copy them as real directories.
 
 ```bash
-# RECOMMENDED: rsync with symlink dereference, resume-on-break, progress.
-rsync -avzP -L -e "ssh -i ~/.ssh/id_ed25519" \
-    root@<VM_IP>:/root/hcmarl_project/"Results 1/" \
-    "/c/Users/admin/Desktop/hcmarl_project/Results 1/"
+# PRIMARY — single pull gets everything (~2-3 GB)
+rsync -avzP -e "ssh -i ~/.ssh/id_ed25519" \
+    root@<public-ip>:/root/hcmarl_project/"Results 1" \
+    /c/Users/admin/Downloads/
 ```
 
 Or with scp:
 ```bash
 scp -r -i ~/.ssh/id_ed25519 \
-    root@<VM_IP>:/root/hcmarl_project/"Results 1" \
-    /c/Users/admin/Desktop/hcmarl_project/
+    root@<public-ip>:/root/hcmarl_project/"Results 1" \
+    /c/Users/admin/Downloads/
 ```
 
 Verify:
 ```bash
-du -sh "/c/Users/admin/Desktop/hcmarl_project/Results 1/"
-ls "/c/Users/admin/Desktop/hcmarl_project/Results 1/logs/"
-ls "/c/Users/admin/Desktop/hcmarl_project/Results 1/checkpoints/"
-cat "/c/Users/admin/Desktop/hcmarl_project/Results 1/_INDEX.txt" | head -30
+du -sh "/c/Users/admin/Downloads/Results 1/"
+ls "/c/Users/admin/Downloads/Results 1/logs/"
+ls "/c/Users/admin/Downloads/Results 1/checkpoints/"
+cat "/c/Users/admin/Downloads/Results 1/_INDEX.txt" | head -30
 ```
 
 Expected: `Results 1/` is ~2-3 GB (2 GB checkpoints + ~30 MB CSVs/JSONs
@@ -852,34 +857,40 @@ seed subdirectories.
 
 ### 11.b Belt-and-braces — three separate pulls for maximum redundancy
 
-If you want independent copies outside `Results 1/` for extra safety
-(you explicitly asked for this — "I don't wanna lose nothing"), run
+Per the user's explicit request ("I don't wanna lose nothing"), run
 these **after** 11.a succeeds. They fetch the same data redundantly
-(the VM-side `logs/` and `checkpoints/` are symlinks to the same files
-already inside `Results 1/`, so this is a second copy of the same
-bytes, not additional bytes).
+(the VM-side `logs/` and `checkpoints/` are symlinks that resolve into
+the same files already inside `Results 1/`, so these are second copies
+of the same bytes, not additional bytes).
+
+The `-L` flag here dereferences the top-level symlinks on the VM so the
+pull copies real files, not dangling symlink markers.
 
 ```bash
-# Second copy of the CSVs/JSONs, independent of Results 1/.
+# BELT-AND-BRACES #1 — independent mirror of logs/ (CSVs + JSONs + mmicrl results, ~50 MB)
 rsync -avzP -L -e "ssh -i ~/.ssh/id_ed25519" \
-    root@<VM_IP>:/root/hcmarl_project/logs/ \
-    "/c/Users/admin/Desktop/hcmarl_project/logs_exp1_mirror/"
+    root@<public-ip>:/root/hcmarl_project/logs/ \
+    /c/Users/admin/Downloads/logs_exp1_mirror/
 
-# Second copy of the .pt checkpoints, independent of Results 1/.
+# BELT-AND-BRACES #2 — independent mirror of checkpoints/ (.pt weights, ~2 GB)
 rsync -avzP -L -e "ssh -i ~/.ssh/id_ed25519" \
-    root@<VM_IP>:/root/hcmarl_project/checkpoints/ \
-    "/c/Users/admin/Desktop/hcmarl_project/checkpoints_exp1_mirror/"
+    root@<public-ip>:/root/hcmarl_project/checkpoints/ \
+    /c/Users/admin/Downloads/checkpoints_exp1_mirror/
 ```
 
-After both mirrors succeed, you have three independent copies on the
-laptop: `Results 1/`, `logs_exp1_mirror/`, `checkpoints_exp1_mirror/`.
-Any single corruption doesn't lose the data.
+After all three pulls succeed, `/c/Users/admin/Downloads/` contains:
+- `Results 1/` (the canonical deliverable — CSVs + JSONs + .pt + metadata)
+- `logs_exp1_mirror/` (second copy of CSVs + JSONs only)
+- `checkpoints_exp1_mirror/` (second copy of .pt weights only)
+
+Any single corruption doesn't lose the data. User moves them locally as
+needed after the pulls complete.
 
 ### 11.c After pulls complete
 
-1. `du -sh Results\ 1/` on the laptop — sanity-check the size.
-2. Spot-check one CSV: `head -3 "Results 1/logs/hcmarl/seed_0/training_log.csv"`
-3. Spot-check one checkpoint: `ls -la "Results 1/checkpoints/hcmarl/seed_0/"`
+1. `du -sh /c/Users/admin/Downloads/"Results 1"` — sanity-check the size (expect 2-3 GB).
+2. Spot-check one CSV: `head -3 "/c/Users/admin/Downloads/Results 1/logs/hcmarl/seed_0/training_log.csv"`
+3. Spot-check one checkpoint: `ls -la "/c/Users/admin/Downloads/Results 1/checkpoints/hcmarl/seed_0/"`
 4. Send §0.2 close-out paste to VM; VM acknowledges.
 5. Destroy the E2E node from the dashboard.
 6. Confirm billing has stopped.
@@ -888,17 +899,22 @@ Any single corruption doesn't lose the data.
 
 ## 12. End-of-session checklist (user runs after §0.2 paste)
 
-- [ ] VM final summary (§6 format) posted
+- [ ] VM final summary (§10 format) posted
 - [ ] STEP 11 audit exit=0
 - [ ] STEP 12 `Results 1/_INDEX.txt` exists with 40+ seed entries
-- [ ] `scp -r` of `Results 1/` completed; laptop has the folder
-- [ ] `ls Results\ 1/{hcmarl,mappo,ippo,mappo_lag}/seed_*/training_log.csv`
+- [ ] §11.a primary `rsync` of `Results 1/` → `/c/Users/admin/Downloads/`
+      completed; folder has logs/ + checkpoints/ + metadata
+- [ ] §11.b mirror #1 of `logs/` → `/c/Users/admin/Downloads/logs_exp1_mirror/`
+      completed
+- [ ] §11.b mirror #2 of `checkpoints/` → `/c/Users/admin/Downloads/checkpoints_exp1_mirror/`
+      completed
+- [ ] `ls /c/Users/admin/Downloads/"Results 1"/logs/{hcmarl,mappo,ippo,mappo_lag}/seed_*/training_log.csv`
       returns 40 non-empty paths
 - [ ] §0.2 close-out sent; VM acknowledged
 - [ ] E2E node destroyed in dashboard
 - [ ] Billing shows node charge stopped
 
-Only after all eight boxes tick is this session "done."
+Only after all ten boxes tick is this session "done."
 
 ---
 
