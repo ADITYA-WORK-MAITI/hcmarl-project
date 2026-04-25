@@ -199,17 +199,30 @@ class IPPO:
     # the shared critic. Prefer get_actions() returning a values dict and
     # calling buffer.store_step directly in new code.
     def store_transition(self, agent_idx, obs, action, log_prob, reward, done):
+        # PS-IPPO is called once per agent per timestep by train.py's
+        # per-agent loop. RolloutBuffer.store_step() expects ALL agents'
+        # data in a single dict call; routing each agent through it
+        # individually broke the buffer's agent_id set on the first call
+        # (KeyError 'worker_1' on the second timestep). The buffer.store()
+        # legacy shim is the correct entry point: it accumulates N
+        # per-agent calls in agent_id order, then flushes one timestep
+        # via store_step() automatically. Set agent_ids on first call so
+        # the shim has its call-order contract anchored.
+        if not self.buffer.agent_ids:
+            self.buffer.agent_ids = [f"worker_{i}" for i in range(self.n_agents)]
+            self.buffer._obs = {a: [] for a in self.buffer.agent_ids}
+            self.buffer._actions = {a: [] for a in self.buffer.agent_ids}
+            self.buffer._log_probs = {a: [] for a in self.buffer.agent_ids}
+            self.buffer._rewards = {a: [] for a in self.buffer.agent_ids}
         obs_t = torch.FloatTensor(obs).to(self.device)
         with torch.no_grad():
             value = float(self.critic(obs_t).item())
-        aid = self.buffer.agent_ids[agent_idx] if self.buffer.agent_ids \
-              else f"worker_{agent_idx}"
-        self.buffer.store_step(
-            obs_dict={aid: obs},
+        self.buffer.store(
+            obs=obs,
             global_state=obs,
-            actions_dict={aid: action},
-            log_probs_dict={aid: log_prob},
-            rewards_dict={aid: reward},
+            action=action,
+            log_prob=log_prob,
+            reward=reward,
             done=done,
-            values={aid: value},
+            values=value,
         )
