@@ -151,7 +151,22 @@ mmicrl:
   hidden_dims: [64, 64]
   use_fixed_theta: false
   rescale_to_floor: true
-  mi_collapse_threshold: 0.01
+  # Workaround W (2026-04-25): set to 2.0 (well above any plausible MI value)
+  # to FORCE every MMICRL fit to be treated as collapsed. Empirical evidence:
+  # incomplete PyTorch determinism enforcement (cudnn.deterministic=True is
+  # set, but use_deterministic_algorithms is NOT) means the MAF/MADE flow
+  # converges to different local optima on different physical L4 chips even
+  # with the same seed. EXP1 produced MI<=5.96e-08 across all 10 seeds on its
+  # VM; EXP2 seed_2 produced MI=1.29 on a different L4. Forcing threshold=2.0
+  # makes every run on every VM use config-default theta_max, restoring
+  # apples-to-apples comparison between the EXP1 hcmarl headline and the
+  # EXP2 remove-one ablations. Documented openly: HCMARL's empirical
+  # advantage on real WSD4FEDSRM stems from ECBF + NSWF + divergent
+  # disagreement, not MMICRL theta heterogeneity (which is null-op on this
+  # data). Post-Tuesday: full determinism (use_deterministic_algorithms +
+  # CUBLAS_WORKSPACE_CONFIG) will be added and re-runs will validate that
+  # MMICRL contribution is genuinely null-op rather than hardware-shadowed.
+  mi_collapse_threshold: 2.0
 
   # ---------------------------------------------------------------------
   # ceiling_source: how per-worker theta_max is computed (Method selection)

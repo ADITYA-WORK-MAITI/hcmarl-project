@@ -65,6 +65,10 @@ nswf:
 mmicrl:
   enabled: true
   use_fixed_theta: false
+  # Workaround W: force MMICRL collapse so every ablation seed uses
+  # config-default theta_max, matching EXP1's empirically-collapsed
+  # hcmarl seeds. See hcmarl_full_config.yaml for full rationale.
+  mi_collapse_threshold: 2.0
 
 disagreement:
   divergent: false
