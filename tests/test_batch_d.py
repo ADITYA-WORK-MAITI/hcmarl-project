@@ -73,8 +73,10 @@ class TestD1ExperimentMatrix:
             )
 
     def test_curve_anchors_present(self):
+        # EXP2 (2026-04-24): 3M anchor dropped because all headline + ablation
+        # runs are 2M steps; 3M would fire a legitimate aggregator error.
         data = yaml.safe_load(MATRIX_PATH.read_text(encoding="utf-8"))
-        assert data["curve_anchors_steps"] == [500_000, 1_000_000, 2_000_000, 3_000_000]
+        assert data["curve_anchors_steps"] == [500_000, 1_000_000, 2_000_000]
 
     def test_lazy_agent_kill_switch_parameters_present(self):
         data = yaml.safe_load(MATRIX_PATH.read_text(encoding="utf-8"))
@@ -123,56 +125,89 @@ class TestD1AggregationPrimitives:
 # ---------------------------------------------------------------------
 
 class TestD2AttributionAblationMatrix:
-    """Five rungs from plain MAPPO to full HC-MARL. Each rung must point
-    at an existing config whose ecbf.enabled / nswf.enabled / mmicrl.enabled
-    flags match the rung name. Phantom rungs would corrupt attribution."""
+    """EXP2 (2026-04-24): REMOVE-ONE ablation ladder. Each of 4 rungs differs
+    from full HC-MARL by EXACTLY ONE ablated component. The 5th reference
+    point (full HC-MARL) comes from EXP1's first 5 seeds — NOT re-run here.
+
+    Ablation axes:
+      no_ecbf          ecbf.enabled=false
+      no_nswf          nswf.enabled=false
+      no_divergent     disagreement.type=constant
+      no_reperfusion   muscle_groups.*.r=1 (was 15 or 30)
+
+    Each rung must point at an existing config whose flags differ from
+    full HC-MARL by exactly the named axis. Phantom rungs or multi-axis
+    drift would corrupt single-component attribution."""
 
     def _load(self):
         return yaml.safe_load(MATRIX_PATH.read_text(encoding="utf-8"))["ablation"]
 
-    def test_five_rungs_in_expected_order(self):
+    def test_four_remove_one_rungs_in_expected_order(self):
         ablation = self._load()
         names = [r["name"] for r in ablation["rungs"]]
         assert names == [
-            "mappo", "plus_ecbf", "plus_nswf", "plus_ecbf_nswf", "full_hcmarl",
+            "no_ecbf", "no_nswf", "no_divergent", "no_reperfusion",
         ]
         assert ablation["seeds"] == [0, 1, 2, 3, 4]
 
-    @pytest.mark.parametrize("rung_name,expected,method", [
-        # (effective ecbf, effective nswf, effective mmicrl) after applying
-        # the same "absent = default on" rule that scripts/train.py uses.
-        # `method` is the 3rd element because the mappo rung defaults to
-        # method=mappo which hardcodes ecbf/nswf off regardless of config.
-        ("mappo",            (False, False, False), "mappo"),
-        ("plus_ecbf",        (True,  False, True),  "hcmarl"),   # ablation_no_nswf
-        ("plus_nswf",        (False, True,  True),  "hcmarl"),   # ablation_no_ecbf
-        ("plus_ecbf_nswf",   (True,  True,  False), "hcmarl"),   # ablation_no_mmicrl
-        ("full_hcmarl",      (True,  True,  True),  "hcmarl"),   # hcmarl_full
+    def test_all_rungs_use_hcmarl_method(self):
+        """Remove-one ablations are all derived from full HC-MARL (NOT bare
+        MAPPO). Every rung's method must be 'hcmarl' so MAPPO's hard-wired
+        ecbf/nswf off doesn't mask the ablated axis."""
+        ablation = self._load()
+        for rung in ablation["rungs"]:
+            assert rung["method"] == "hcmarl", (
+                f"{rung['name']}: method must be 'hcmarl' for remove-one "
+                f"semantics (got '{rung['method']}')"
+            )
+
+    @pytest.mark.parametrize("rung_name,expected", [
+        # (ecbf_enabled, nswf_enabled, mmicrl_enabled, disagreement_type, r_value)
+        # Full HC-MARL reference: (True, True, True, "divergent", 15/30)
+        # Each rung flips EXACTLY one of these.
+        ("no_ecbf",         (False, True,  True,  "divergent", 15)),
+        ("no_nswf",         (True,  False, True,  "divergent", 15)),
+        ("no_divergent",    (True,  True,  True,  "constant",  15)),
+        ("no_reperfusion",  (True,  True,  True,  "divergent", 1)),
     ])
-    def test_rung_flags_match_config(self, rung_name, expected, method):
+    def test_remove_one_config_flips_exactly_one_axis(self, rung_name, expected):
         ablation = self._load()
         rung = next(r for r in ablation["rungs"] if r["name"] == rung_name)
-        assert rung["method"] == method
         cfg_path = ROOT / rung["config"]
         assert cfg_path.exists(), f"{rung_name}: {cfg_path} missing"
         cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
 
         def flag(section, default):
-            """Match scripts/train.py: absent section OR absent `enabled`
-            key = section defaults to `default`. The mappo method hardcodes
-            ecbf/nswf off regardless of config."""
             sec = cfg.get(section) or {}
             return bool(sec.get("enabled", default))
 
-        if method == "mappo":
-            # The bare baseline always runs without ECBF/NSWF by method choice.
-            got = (False, False, flag("mmicrl", False))
-        else:
-            got = (flag("ecbf", True), flag("nswf", True), flag("mmicrl", False))
+        ecbf_on = flag("ecbf", True)
+        nswf_on = flag("nswf", True)
+        mmicrl_on = flag("mmicrl", True)  # full HC-MARL default is on
+        disag_type = (cfg.get("disagreement") or {}).get("type", "divergent")
+        # r: take shoulder's r as representative (all 6 muscles flip together
+        # in no_reperfusion; others keep the PDF-verified r=15 or r=30).
+        mg = cfg.get("environment", {}).get("muscle_groups", {})
+        r_shoulder = mg.get("shoulder", {}).get("r", 15)
+
+        got = (ecbf_on, nswf_on, mmicrl_on, disag_type, r_shoulder)
         assert got == expected, (
-            f"{rung_name} ({rung['config']}, method={method}): "
-            f"expected (ecbf, nswf, mmicrl) == {expected}, got {got}"
+            f"{rung_name} ({rung['config']}): "
+            f"expected {expected}, got {got}"
         )
+
+    def test_ablation_total_steps_matches_exp1_reference(self):
+        """All 4 ablation configs must run 2M steps to match the EXP1
+        HCMARL reference (first 5 seeds of logs/hcmarl/). Any drift here
+        breaks the apples-to-apples comparison at curve anchors."""
+        ablation = self._load()
+        for rung in ablation["rungs"]:
+            cfg = yaml.safe_load((ROOT / rung["config"]).read_text(encoding="utf-8"))
+            steps = cfg.get("training", {}).get("total_steps")
+            assert steps == 2_000_000, (
+                f"{rung['name']}: total_steps={steps}, expected 2,000,000 "
+                f"for EXP1/EXP2 alignment"
+            )
 
 
 # ---------------------------------------------------------------------

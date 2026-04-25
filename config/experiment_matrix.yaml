@@ -26,27 +26,38 @@ headline:
     ippo:      {config: config/ippo_config.yaml,         method: ippo}
     mappo_lag: {config: config/mappo_lag_config.yaml,    method: mappo_lag}
 
-# D2 — attribution ablation: which component contributes what.
-# 5 rungs from plain MAPPO up to full HC-MARL. 5 seeds per rung = 25 runs.
-# The rungs map to existing configs (no new YAML needed):
-#   MAPPO (bare)          -> mappo_config.yaml
-#   + ECBF                -> ablation_no_nswf.yaml   (ecbf on,  nswf off)
-#   + NSWF                -> ablation_no_ecbf.yaml   (ecbf off, nswf on)
-#   + ECBF + NSWF         -> ablation_no_mmicrl.yaml (both on, mmicrl off)
-#   + full HC-MARL        -> hcmarl_full_config.yaml
+# D2 — REMOVE-ONE attribution ablation (EXP2, 2026-04-24).
+# Reference point is full HC-MARL (EXP1 first 5 seeds — NOT re-run here).
+# Each rung differs from full HC-MARL by EXACTLY ONE ablated component.
+# 4 rungs x 5 seeds = 20 VM runs. HC-MARL reference provides the 5th rung
+# post-hoc from EXP1 logs (logs/hcmarl/seed_{0..4}/).
+#
+# Ablation axes:
+#   no_ecbf          ecbf.enabled=false            (safety filter off; everything else on)
+#   no_nswf          nswf.enabled=false            (Hungarian allocator off; everything else on)
+#   no_divergent     disagreement.type=constant    (D_i=kappa instead of kappa*MF^2/(1-MF))
+#   no_reperfusion   muscle_groups.*.r=1           (3CC-r reperfusion multiplier off)
+#
+# MMICRL stays ON in all 4 ablations so each differs from full HC-MARL by
+# exactly one component. MMICRL is null-op on real WSD4FEDSRM data (MI
+# collapses to 0, safety ceilings fall back to config defaults) — the
+# wasted ~5 min/seed of pretrain is the cost of preserving clean single-
+# component attribution. Do NOT drop mmicrl.enabled to false to save time;
+# that would make each ablation a 2-component removal.
 ablation:
   seeds: [0, 1, 2, 3, 4]
   rungs:
-    - {name: mappo,            config: config/mappo_config.yaml,        method: mappo}
-    - {name: plus_ecbf,        config: config/ablation_no_nswf.yaml,    method: hcmarl}
-    - {name: plus_nswf,        config: config/ablation_no_ecbf.yaml,    method: hcmarl}
-    - {name: plus_ecbf_nswf,   config: config/ablation_no_mmicrl.yaml,  method: hcmarl}
-    - {name: full_hcmarl,      config: config/hcmarl_full_config.yaml,  method: hcmarl}
+    - {name: no_ecbf,         config: config/ablation_no_ecbf.yaml,         method: hcmarl}
+    - {name: no_nswf,         config: config/ablation_no_nswf.yaml,         method: hcmarl}
+    - {name: no_divergent,    config: config/ablation_no_divergent.yaml,    method: hcmarl}
+    - {name: no_reperfusion,  config: config/ablation_no_reperfusion.yaml,  method: hcmarl}
 
 # D3 — learning-curve anchor points (steps).
 # Every CSV must have a row with global_step >= each anchor. Aggregator
-# reports IQM + stratified bootstrap 95% CI at each anchor per method.
-curve_anchors_steps: [500000, 1000000, 2000000, 3000000]
+# reports IQM + stratified bootstrap 95% CI at each anchor per rung.
+# 3M anchor dropped (EXP2 2026-04-24): all EXP1 headline + EXP2 ablation
+# runs are 2M steps, so 3M would fire a legitimate aggregator error.
+curve_anchors_steps: [500000, 1000000, 2000000]
 
 # D4 — lazy-agent kill-switch parameters.
 # Per-agent task-selection entropy is logged every episode. If any agent's
