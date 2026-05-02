@@ -613,9 +613,16 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     with open(os.path.join(log_dir, "config.yaml"), "w") as f:
         yaml.dump(save_cfg, f)
 
-    # Detect agent type for buffer storage
+    # Detect agent type for buffer storage. The "lagrangian" branch is
+    # the path that uses LagrangianRolloutBuffer.store(... cost=..., cost_values=...);
+    # MACPO uses the same buffer (cost critic + cost advantage GAE) even
+    # though its dual is solved analytically per-step rather than by a
+    # PID-Lagrangian, so it MUST be detected here -- otherwise it falls
+    # through to the generic-buffer branch which calls store() without
+    # `cost` / `cost_values` and crashes with TypeError.
     is_mappo_lag = isinstance(agent, MAPPOLagrangian)
-    is_lagrangian = is_mappo_lag
+    is_macpo = isinstance(agent, MACPO)
+    is_lagrangian = is_mappo_lag or is_macpo
     is_ippo = isinstance(agent, IPPO)
     is_hcmarl = hasattr(agent, 'mappo')
 

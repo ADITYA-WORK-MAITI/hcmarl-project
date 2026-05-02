@@ -34,8 +34,7 @@ training:
   eval_interval: 50000
   checkpoint_interval: 100000
   n_eval_episodes: 10
-  seeds: [0, 1, 2, 3, 4]
-
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 algorithm:
   lr_actor: 0.0003
   lr_critic: 0.001
@@ -65,10 +64,13 @@ nswf:
 mmicrl:
   enabled: true
   use_fixed_theta: false
-  # Workaround W: force MMICRL collapse so every ablation seed uses
-  # config-default theta_max, matching EXP1's empirically-collapsed
-  # hcmarl seeds. See hcmarl_full_config.yaml for full rationale.
-  mi_collapse_threshold: 2.0
+  # Reverted from 2.0 -> 0.01 on 2026-04-25 (post-EXP2 cooking).
+  # WAS temporarily 2.0 (Workaround W) during the EXP2 ablation grid run
+  # for the hardware-sensitivity workaround documented in
+  # hcmarl_full_config.yaml. EXP2 Results 2/ artefacts WERE produced under
+  # threshold=2.0. Now reverted to original so EXP3 can use natural MMICRL
+  # collapse behavior on synthetic data.
+  mi_collapse_threshold: 0.01
 
 disagreement:
   divergent: false

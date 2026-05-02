@@ -1,23 +1,24 @@
-"""Build-up ablation launcher — Experiment A attribution ladder (Batch D2).
+"""Remove-one ablation launcher — single-component attribution (EXP2).
 
 Reads `config/experiment_matrix.yaml` as the single source of truth and
 launches every (rung, seed) pair under `ablation:`. Per the Batch D
 design that file is canonical — adding a rung or changing a seed list
 is a YAML edit, never a code edit here.
 
-The build-up ladder (instead of the old remove-one design) reads as a
-direct attribution: rung k - rung k-1 = the contribution of the component
-added at step k. Default ladder:
+Each rung removes EXACTLY one component from the full HC-MARL stack.
+The reference (rung 0 = full HCMARL) is provided by the EXP1 headline
+runs at logs/hcmarl/seed_<s>/. Current ladder:
 
-    rung name           component added              config
+    rung name           component removed             config
     -----------------   --------------------------   ---------------------------------
-    mappo               (none — bare MAPPO)          config/mappo_config.yaml
-    plus_ecbf           ECBF safety filter            config/ablation_no_nswf.yaml
-    plus_nswf           NSWF allocator                config/ablation_no_ecbf.yaml
-    plus_ecbf_nswf      both ECBF + NSWF              config/ablation_no_mmicrl.yaml
-    full_hcmarl         + MMICRL type discovery       config/hcmarl_full_config.yaml
+    no_ecbf             ECBF safety filter            config/ablation_no_ecbf.yaml
+    no_nswf             NSWF welfare allocator        config/ablation_no_nswf.yaml
+    no_divergent        divergent disagreement        config/ablation_no_divergent.yaml
+    no_reperfusion      r=15/r=30 reperfusion         config/ablation_no_reperfusion.yaml
+    no_mmicrl           MMICRL type inference         config/ablation_no_mmicrl.yaml
 
-5 rungs x 5 seeds = 25 runs.
+5 rungs x 10 seeds = 50 runs (2026-05-02 plan locked at 10/10 symmetric
+to remove the EXP1/EXP2 seed-count asymmetry concern).
 
 Each rung is launched with `--run-name ablation_<rung>` so the logs land
 at `logs/ablation_<rung>/seed_<s>/training_log.csv`. This keeps them
@@ -107,6 +108,12 @@ def main() -> int:
                              "total_vcpus // max_parallel (auto). 0 disables. Prevents "
                              "torch's vcpu-sized thread pool from oversubscribing when "
                              "running multiple concurrent seeds.")
+    parser.add_argument("--fresh-logs", action="store_true",
+                        help="Before launching, rm -rf logs/ablation_<rung>/ "
+                             "and checkpoints/ablation_<rung>/ for every rung "
+                             "in the matrix. REQUIRED for clean reruns -- "
+                             "without it, HCMARLLogger appends new rows onto "
+                             "stale CSVs from prior contaminated runs.")
     args = parser.parse_args()
 
     matrix = _load_matrix(args.matrix)
@@ -139,6 +146,22 @@ def main() -> int:
         print(f"Drive backup: {args.drive_backup_dir}")
     if args.dry_run:
         print("(dry-run mode — no subprocesses will be launched)\n")
+
+    # --fresh-logs: wipe per-rung log + checkpoint dirs BEFORE launching any
+    # subprocess. Mirrors run_baselines.py:156-166 to prevent stale-CSV
+    # contamination on rerun. Mandatory after the 2026-04-20 incident where
+    # appended rows from a contaminated baseline run silently corrupted
+    # downstream aggregation. Safe to no-op in dry-run.
+    if args.fresh_logs and not args.dry_run:
+        import shutil
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for rung_name in rung_names:
+            run_name = f"ablation_{rung_name}"
+            for sub in ("logs", "checkpoints"):
+                target = os.path.join(repo_root, sub, run_name)
+                if os.path.isdir(target):
+                    print(f"  --fresh-logs: removed {sub}/{run_name}/")
+                    shutil.rmtree(target, ignore_errors=True)
 
     jobs: List[Tuple[int, str, int, List[str], str]] = []
     for i, rung_name in enumerate(rung_names):

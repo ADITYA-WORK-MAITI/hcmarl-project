@@ -86,7 +86,7 @@ training:
   eval_interval: 50000
   checkpoint_interval: 100000
   n_eval_episodes: 10
-  seeds: [0, 1, 2, 3, 4]
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
   # M6: cudnn.deterministic=True gives bit-exact reproducibility at ~1.5x
   # slowdown. Keep True for paper runs. Flip to False only for throughput
   # experiments where per-seed variance is acceptable.
@@ -151,22 +151,21 @@ mmicrl:
   hidden_dims: [64, 64]
   use_fixed_theta: false
   rescale_to_floor: true
-  # Workaround W (2026-04-25): set to 2.0 (well above any plausible MI value)
-  # to FORCE every MMICRL fit to be treated as collapsed. Empirical evidence:
-  # incomplete PyTorch determinism enforcement (cudnn.deterministic=True is
-  # set, but use_deterministic_algorithms is NOT) means the MAF/MADE flow
-  # converges to different local optima on different physical L4 chips even
-  # with the same seed. EXP1 produced MI<=5.96e-08 across all 10 seeds on its
-  # VM; EXP2 seed_2 produced MI=1.29 on a different L4. Forcing threshold=2.0
-  # makes every run on every VM use config-default theta_max, restoring
-  # apples-to-apples comparison between the EXP1 hcmarl headline and the
-  # EXP2 remove-one ablations. Documented openly: HCMARL's empirical
-  # advantage on real WSD4FEDSRM stems from ECBF + NSWF + divergent
-  # disagreement, not MMICRL theta heterogeneity (which is null-op on this
-  # data). Post-Tuesday: full determinism (use_deterministic_algorithms +
-  # CUBLAS_WORKSPACE_CONFIG) will be added and re-runs will validate that
-  # MMICRL contribution is genuinely null-op rather than hardware-shadowed.
-  mi_collapse_threshold: 2.0
+  # Reverted to original 0.01 on 2026-04-25 (post-EXP2 cooking).
+  # WAS temporarily set to 2.0 (Workaround W, commit 91fc7e5) for EXP2's
+  # 4 ablation runs only — to force MMICRL collapse on every fit because
+  # EXP2's L4 chip happened to fit MI=1.29 on seed_2 (vs EXP1's L4 which
+  # collapsed to MI<=5.96e-08 across all 10 seeds). Workaround was needed
+  # because incomplete PyTorch determinism (cudnn.deterministic=True only;
+  # use_deterministic_algorithms NOT enabled) lets the MAF/MADE flow MLE
+  # converge to different local optima on different physical chips with
+  # the same seed. EXP2 ablation grid completed under threshold=2.0;
+  # those Results 2/ artefacts ARE the canonical EXP2 data.
+  # Reverted to 0.01 (original) so EXP3 (synthetic K-recovery validation)
+  # can use MMICRL's natural collapse behavior — EXP3 needs MMICRL to
+  # report MI honestly so we can show K=3 recovery on synthetic K=3 data
+  # and K=1 collapse on synthetic K=1 data.
+  mi_collapse_threshold: 0.01
 
   # ---------------------------------------------------------------------
   # ceiling_source: how per-worker theta_max is computed (Method selection)

@@ -5,14 +5,15 @@
 # the Gate D test read this file — if you add a new config or change the
 # seed count, change it HERE, not in ad-hoc shell scripts.
 #
-# Budget sanity (E2E Networks L4 @ INR 17/hr spot, 3M steps, ~1.5 hr/run):
-#   Plan A (expected, 1000-1500 sps):
-#     headline:  4 methods x 10 seeds x 1.5 hr = 60 hr x INR 20.06 = INR 1,204
-#     ablation:  5 rungs  x  5 seeds x 1.5 hr = 37.5 hr x INR 20.06 = INR 752
-#     overhead (preemption + reserve):                              INR 192
-#     total:                                                   INR ~2,148
-#   Hard ceiling: INR 2,500 (kill-switch at 95% = INR 2,375).
-#   Source: Claude Research Mode throughput audit 2026-04-17.
+# Budget sanity (L40S @ INR 102/hr on-demand, 2M steps, ~28 hr 6-way parallel):
+#   Plan locked 2026-05-02 (post-baseline-expansion + symmetric seeds):
+#     headline:  6 methods x 10 seeds = 60 runs   (hcmarl + mappo + mappo_lag
+#                                                  + happo + macpo + shielded_mappo)
+#     ablation:  5 rungs  x 10 seeds = 50 runs   (no_ecbf, no_nswf, no_divergent,
+#                                                 no_reperfusion, no_mmicrl)
+#     exp3-B:    2 conds  x 10 seeds = 20 runs   (synthetic K=3: hcmarl vs no_mmicrl)
+#     total: 130 runs, ~28 wall-hr on L40S 6-way parallel = ~INR 24,500-25,000.
+#   Hard ceiling: INR 26,000 (kill-switch at 95% = INR 24,700).
 
 # D1 — headline (HC-MARL vs baselines): 10 seeds each.
 # Seed list is literal — aggregation is strictly keyed on this list, so if
@@ -28,24 +29,26 @@ headline:
     macpo:     {config: config/macpo_config.yaml,        method: macpo}
     shielded_mappo: {config: config/shielded_mappo_config.yaml, method: shielded_mappo}
 
-# D2 — REMOVE-ONE attribution ablation (EXP2, 2026-04-24).
-# Reference point is full HC-MARL (EXP1 first 5 seeds — NOT re-run here).
+# D2 — REMOVE-ONE attribution ablation (EXP2).
+# Reference point is full HC-MARL (EXP1's hcmarl runs at all 10 seeds).
 # Each rung differs from full HC-MARL by EXACTLY ONE ablated component.
-# 4 rungs x 5 seeds = 20 VM runs. HC-MARL reference provides the 5th rung
-# post-hoc from EXP1 logs (logs/hcmarl/seed_{0..4}/).
+# 5 rungs x 10 seeds = 50 VM runs (2026-05-02: no_mmicrl rung added,
+# seeds bumped to 10 to match the EXP1 grid -- removes the 10/5 asymmetry
+# concern for TMLR review).
 #
 # Ablation axes:
 #   no_ecbf          ecbf.enabled=false            (safety filter off; everything else on)
 #   no_nswf          nswf.enabled=false            (Hungarian allocator off; everything else on)
 #   no_divergent     disagreement.type=constant    (D_i=kappa instead of kappa*MF^2/(1-MF))
 #   no_reperfusion   muscle_groups.*.r=1           (3CC-r reperfusion multiplier off)
+#   no_mmicrl        mmicrl.enabled=false          (type-inference fallback to floor)
 #
-# MMICRL stays ON in all 4 ablations so each differs from full HC-MARL by
-# exactly one component. MMICRL is null-op on real WSD4FEDSRM data (MI
-# collapses to 0, safety ceilings fall back to config defaults) — the
-# wasted ~5 min/seed of pretrain is the cost of preserving clean single-
-# component attribution. Do NOT drop mmicrl.enabled to false to save time;
-# that would make each ablation a 2-component removal.
+# Note: on real WSD4FEDSRM data MMICRL also collapses (MI < 1e-7) under
+# the no_ecbf/no_nswf/no_divergent/no_reperfusion configs because the
+# data simply does not exhibit multi-type structure. The no_mmicrl rung
+# disables MMICRL entirely so the comparison is "MMICRL ran but
+# collapsed" vs "MMICRL never ran" -- isolating the cost (~5 min pretrain
+# per seed) of attempting type inference at all.
 ablation:
   seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
   rungs:
