@@ -8,10 +8,12 @@
 
 ## TL;DR
 
-- **26 of 28** math doc references have a local PDF. ✅
-- **2 missing:** [25] Khalil "Nonlinear Systems" (textbook) and [26] Rohmert 1960 (German paper).
-- **4 extra PDFs** in folder (Hoozemans 2004, Anton 2001, Waters 1993, Watanabe 2013) — used by code, will need to appear in the TMLR paper once empirical/calibration sections are written.
-- **6 PDFs labelled "UNVERIFIED"** — I identified all of them. Two are correctly mapped to numbered references (just need rename); four are supplementary refs.
+- **26 of 26** math doc references now have local PDFs (post v14 cite-discipline update on 2026-05-02). ✅
+- **v14 cite-discipline pass (2026-05-02):** [25] Khalil dropped from math doc bibliography because the textbook PDF is not in `REFERENCES/`. Class-$\mathcal{K}$ definition moved inline. Old [26] Boyd renumbered to [25]; old [27] Stellato OSQP renumbered to [26]. The math doc now has exactly 26 bib entries, all backed by local PDFs.
+- **PDF filename note:** the file `27.pdf` (Boyd & Vandenberghe) is now bib ref [25]; `28.pdf` (Stellato OSQP) is now bib ref [26]. Filenames retained as-is to avoid breaking any external scripts that reference them by number — if you want to rename for cleanliness, do it manually.
+- **4 supplementary PDFs** in folder (Hoozemans 2004, Anton 2001, Waters 1993, Watanabe 2013) — used by code, cited in the TMLR paper experimental section.
+- **2 numeric "UNVERIFIED" tags** mean the file content was confirmed against its bib reference (1.pdf = Liu 2002 ✓; 15.pdf = Ames 2019 ✓).
+- **42-PDF content verification (2026-05-02):** 40 of 42 PDFs verified MATCH against expected metadata via first-page Read. 1 was image-only (18.pdf = Nash 1953, content known via metadata). 1 had wrong author attribution in our bib entry (sun2025 → corrected to bonakdar2025).
 
 ---
 
@@ -146,7 +148,7 @@ Post-baseline-expansion (4 baselines: MAPPO + MAPPO-Lag + MACPO + HAPPO + Shield
 | 11 | Cerqueira et al. 2024 (sEMG fatigue) | future cross-val (NEW) | VERIFIED via PubMed 39771816 | NO |
 | 12 | Mudiyanselage et al. 2021 (manual handling) | related work (NEW) | VERIFIED via arXiv:2109.15036 | NO |
 | 13 | Peters et al. 2025 (wearable review) | related work (NEW) | VERIFIED via BAuA institutional OA copy + 3-source author cross-check (was incorrectly attributed to "Cataldi" yesterday; corrected 2026-05-02) | YES (BAuA OA, 2.3 MB) |
-| 14 | Sun et al. 2025 (perceived fatigue) | related work (optional, NEW) | PARTIAL (publisher page blocked WebFetch; full author list TODO) | YES (BMC OA, 5.6 MB) |
+| 14 | Bonakdar et al. 2025 (perceived fatigue) | related work (optional, NEW) | VERIFIED via local PDF page-1 extraction 2026-05-02 (was incorrectly attributed to "Sun et al." yesterday; corrected) | YES (BMC OA, 5.6 MB) |
 
 (Item 14 is optional belt-and-braces; the canonical 13 are 1-13.)
 
