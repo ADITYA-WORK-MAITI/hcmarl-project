@@ -85,8 +85,10 @@ def _conjugate_gradient(matvec_fn: Callable[[torch.Tensor], torch.Tensor],
                          tol: float = 1e-10) -> torch.Tensor:
     """Solve A x = b via CG, where A is accessed only through matvec_fn(v) = A @ v.
 
-    Standard textbook CG (Shewchuk 1994). No preconditioning -- the
-    Hessian damping in fisher_vector_product handles ill-conditioning.
+    Standard conjugate-gradient iteration (textbook reference: Boyd &
+    Vandenberghe 2004 chapter on iterative methods, math doc ref [25]).
+    No preconditioning -- the Hessian damping in fisher_vector_product
+    handles ill-conditioning.
     """
     x = torch.zeros_like(b)
     r = b.clone()

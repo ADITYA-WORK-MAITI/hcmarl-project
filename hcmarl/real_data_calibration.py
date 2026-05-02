@@ -234,8 +234,9 @@ def compute_dynamic_isometric_report(
 
     References:
         - Frey-Law & Avin (2010): Isometric endurance curves by joint
+          (consolidates 194-publication meta-analysis of historical
+          isometric endurance data)
         - Frey-Law, Looft & Heitsman (2012): Monte Carlo (F, R) calibration
-        - Rohmert (1960): Foundational isometric endurance data
         - Looft et al. (2018): Intermittent/dynamic task extensions
 
     Args:

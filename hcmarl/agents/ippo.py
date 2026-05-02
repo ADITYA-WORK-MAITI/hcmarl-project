@@ -16,11 +16,11 @@ critic call per step, matching MAPPO throughput while preserving the
 algorithmic identity (decentralised critic on local obs).
 
 References:
-    de Witt, S. et al. (2020) "Is Independent Learning All You Need in
-        the StarCraft Multi-Agent Challenge?" arXiv:2011.09533.
     Yu, C. et al. (2022) "The Surprising Effectiveness of PPO in
-        Cooperative Multi-Agent Games." NeurIPS (Section 4.3 describes
-        their IPPO implementation: parameter-shared, local-obs critic).
+        Cooperative Multi-Agent Games." NeurIPS. Section 4.3 of that
+        paper describes the IPPO implementation we follow here:
+        parameter-shared actor and critic, decentralised critic on
+        local observations.
 """
 from __future__ import annotations
 

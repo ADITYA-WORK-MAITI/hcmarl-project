@@ -71,7 +71,7 @@ class MuscleParams:
 # -- Calibrated parameter sets from Table 1 (isometric regime) --
 # These are ISOMETRIC fatigue/recovery rates from Frey-Law, Looft &
 # Heitsman (2012), calibrated against sustained isometric endurance data
-# (Frey-Law & Avin 2010 meta-analysis of 194 publications; Rohmert 1960).
+# (Frey-Law & Avin 2010 meta-analysis of 194 publications).
 # For dynamic tasks (e.g. WSD4FEDSRM rotations), the effective F is
 # 30-180x larger because dynamic contractions impose higher metabolic
 # demand per unit time. See real_data_calibration.py for dynamic regime.

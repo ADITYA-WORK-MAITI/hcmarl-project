@@ -140,7 +140,9 @@ class RolloutBuffer:
         S-19 fix: Distinguishes truncation from termination at the last step.
         For truncated episodes (time limit), the bootstrap V(s_next) is used.
         For terminated episodes (true terminal state), the bootstrap is 0.
-        See Pardo et al. (2018) "Time Limits in RL" for why this matters.
+        Without this distinction the agent learns a value function biased
+        toward 0 near the time-limit boundary, which corrupts late-episode
+        credit assignment.
 
         Args:
             last_values: dict {agent_id: float} -- bootstrap values for each agent.
