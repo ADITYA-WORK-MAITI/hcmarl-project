@@ -1,8 +1,12 @@
 """Experiment 0: Local validation of everything that feeds the GPU runs.
 
 This script does NOT train on GPU. It runs the entire supporting code path
-for HCMARL + MAPPO + IPPO + MAPPO-Lag + every ablation on CPU, dumping
-human-readable summaries + machine-parseable CSVs/JSONs into ./Results 0/.
+for HCMARL + 5 baselines + every ablation on CPU, dumping human-readable
+summaries + machine-parseable CSVs/JSONs into ./Results 0/.
+
+2026-05-02 update: baseline lineup is now MAPPO + MAPPO-Lag + MACPO +
+HAPPO + Shielded-MAPPO (no IPPO/PS-IPPO; dropped from headline matrix).
+The runner mirrors the headline matrix in config/experiment_matrix.yaml.
 
 Output convention (per user instruction):
     Results 0/
@@ -17,7 +21,8 @@ Scope:
     4. Path G pipeline (already-regenerated profile stats)
     5. MMICRL type discovery (already-fit results)
     6. Full test suite (per-file pass/fail + timing)
-    7. Smoke forward-pass per method {hcmarl, mappo, ippo, mappo_lag}
+    7. Smoke forward-pass per method {hcmarl, mappo, mappo_lag, macpo,
+       happo, shielded_mappo} (NO ippo)
     8. Smoke forward-pass per ablation {5 rungs}
     9. Constants integrity ledger
 
@@ -468,11 +473,15 @@ def _smoke_fwd(method: str, config_name: str, ablation_name: str = None):
 def run_method_smokes():
     print("\n[7/9] Smoke forward-pass per method (headline configs)")
     all_ok = True
+    # 2026-05-02 lineup: HCMARL + 5 baselines (no IPPO/PS-IPPO).
+    # Mirror config/experiment_matrix.yaml headline.methods.
     for method, cfg in [
-        ("hcmarl",     "hcmarl_full_config.yaml"),
-        ("mappo",      "mappo_config.yaml"),
-        ("ippo",       "ippo_config.yaml"),
-        ("mappo_lag",  "mappo_lag_config.yaml"),
+        ("hcmarl",         "hcmarl_full_config.yaml"),
+        ("mappo",          "mappo_config.yaml"),
+        ("mappo_lag",      "mappo_lag_config.yaml"),
+        ("macpo",          "macpo_config.yaml"),
+        ("happo",          "happo_config.yaml"),
+        ("shielded_mappo", "shielded_mappo_config.yaml"),
     ]:
         try:
             _smoke_fwd(method, cfg)
@@ -519,14 +528,18 @@ def run_constants_ledger():
     from hcmarl.real_data_calibration import POPULATION_FR, ENDURANCE_POWER_MODEL
     from hcmarl.ecbf_filter import SLACK_PENALTY, SLACK_EPS, ECBFParams
     from hcmarl.nswf_allocator import NSWF_EPSILON
-    # scripts/ is a sibling folder, not an importable package. Temporarily
-    # add it to sys.path so we can import niosh_calibration without a
-    # package __init__.py.
+    # scripts/ is a sibling folder, not an importable package. Load the
+    # niosh_calibration module via importlib AND register it in
+    # sys.modules so Python 3.13's @dataclass decorator can resolve
+    # cls.__module__.__dict__ (without that, dataclass raises
+    # AttributeError: 'NoneType' object has no attribute '__dict__').
     import sys as _sys
-    _scripts_dir = str(REPO / "scripts")
-    if _scripts_dir not in _sys.path:
-        _sys.path.insert(0, _scripts_dir)
-    import niosh_calibration as _niosh
+    import importlib.util as _il
+    _niosh_path = REPO / "scripts" / "niosh_calibration.py"
+    _spec = _il.spec_from_file_location("niosh_calibration", str(_niosh_path))
+    _niosh = _il.module_from_spec(_spec)
+    _sys.modules["niosh_calibration"] = _niosh
+    _spec.loader.exec_module(_niosh)
     LC_METRIC = _niosh.LC_METRIC
     vertical_multiplier = _niosh.vertical_multiplier
 
