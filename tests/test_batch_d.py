@@ -64,13 +64,16 @@ class TestD1ExperimentMatrix:
 
     def test_headline_methods_cover_full_lineup(self):
         # 2026-05-02 baseline expansion: ippo dropped (most-redundant axis
-        # with mappo); happo + macpo added so the constraint-handling axis
-        # is covered by Lagrangian (mappo_lag), trust-region (macpo), and
-        # heterogeneous trust-region (happo) variants. Five entries total.
+        # with mappo); happo + macpo + shielded_mappo added. The
+        # constraint-handling axis is now covered by Lagrangian
+        # (mappo_lag), trust-region (macpo), heterogeneous trust-region
+        # (happo), AND a non-RL static-threshold shield (shielded_mappo)
+        # so the ECBF-vs-shielding contribution claim is testable. Six
+        # entries total including hcmarl.
         data = yaml.safe_load(MATRIX_PATH.read_text(encoding="utf-8"))
         methods = data["headline"]["methods"]
         assert set(methods.keys()) == {
-            "hcmarl", "mappo", "mappo_lag", "happo", "macpo",
+            "hcmarl", "mappo", "mappo_lag", "happo", "macpo", "shielded_mappo",
         }
         for name, entry in methods.items():
             cfg_path = ROOT / entry["config"]

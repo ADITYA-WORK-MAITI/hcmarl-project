@@ -28,6 +28,7 @@ from hcmarl.agents.mappo_lag import MAPPOLagrangian
 from hcmarl.agents.ippo import IPPO
 from hcmarl.agents.happo import HAPPO
 from hcmarl.agents.macpo import MACPO
+from hcmarl.agents.shielded_mappo import ShieldedMAPPO
 from hcmarl.agents.hcmarl_agent import HCMARLAgent
 from hcmarl.nswf_allocator import NSWFParams, create_allocator
 from hcmarl.logger import HCMARLLogger
@@ -44,6 +45,7 @@ METHODS = {
     "mappo_lag": "MAPPO-Lagrangian (cost critic + dual variable)",
     "happo": "HAPPO (heterogeneous trust-region PPO; Kuba 2022)",
     "macpo": "MACPO (multi-agent constrained policy optimisation; Gu 2023)",
+    "shielded_mappo": "Shielded-MAPPO (MAPPO + static-threshold task-refusal shield)",
 }
 
 
@@ -171,6 +173,34 @@ def create_agent(method, obs_dim, global_obs_dim, n_actions, n_agents, cfg, devi
             hidden_dim=hidden_dim,
             critic_hidden_dim=algo.get("critic_hidden_dim", 128),
             device=device,
+        )
+    elif method == "shielded_mappo":
+        env_cfg = cfg.get("environment", {}) or {}
+        muscle_groups = env_cfg.get("muscle_groups", {}) or {}
+        muscle_names = list(muscle_groups.keys())
+        theta_max_cfg = env_cfg.get("theta_max", {}) or {}
+        tasks_cfg = env_cfg.get("tasks", {}) or {}
+        task_names = list(tasks_cfg.keys())
+        if not task_names or "rest" not in task_names:
+            raise ValueError(
+                "shielded_mappo requires environment.tasks with a 'rest' entry; "
+                f"got tasks={task_names}"
+            )
+        shield_cfg = cfg.get("shield", {}) or {}
+        return ShieldedMAPPO(
+            obs_dim=obs_dim, global_obs_dim=global_obs_dim,
+            n_actions=n_actions, n_agents=n_agents,
+            muscle_names=muscle_names,
+            theta_max=theta_max_cfg,
+            task_names=task_names,
+            task_demands=tasks_cfg,
+            rest_task_name="rest",
+            safety_margin=float(shield_cfg.get("safety_margin", 0.05)),
+            demand_threshold=float(shield_cfg.get("demand_threshold", 0.0)),
+            lr_actor=lr_actor, lr_critic=lr_critic,
+            gamma=gamma, gae_lambda=gae_lambda, clip_eps=clip_eps,
+            entropy_coeff=entropy_coeff, max_grad_norm=max_grad_norm,
+            n_epochs=n_epochs, batch_size=batch_size, device=device,
         )
     elif method == "macpo":
         return MACPO(

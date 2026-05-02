@@ -26,6 +26,7 @@ headline:
     mappo_lag: {config: config/mappo_lag_config.yaml,    method: mappo_lag}
     happo:     {config: config/happo_config.yaml,        method: happo}
     macpo:     {config: config/macpo_config.yaml,        method: macpo}
+    shielded_mappo: {config: config/shielded_mappo_config.yaml, method: shielded_mappo}
 
 # D2 — REMOVE-ONE attribution ablation (EXP2, 2026-04-24).
 # Reference point is full HC-MARL (EXP1 first 5 seeds — NOT re-run here).

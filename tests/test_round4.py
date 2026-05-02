@@ -221,11 +221,12 @@ class TestC16:
         """METHODS dict must contain only methods backed by real
         implementations. As of 2026-05-02 the lineup is hcmarl, mappo,
         ippo (kept as a method even though dropped from the headline
-        matrix), mappo_lag, happo, and macpo. Forbidden names: 'ppo_lag',
-        'cpo' -- these were the Round-4 fake-baseline holdovers."""
+        matrix), mappo_lag, happo, macpo, and shielded_mappo. Forbidden
+        names: 'ppo_lag', 'cpo' -- these were the Round-4 fake-baseline
+        holdovers."""
         with open("scripts/train.py") as f:
             content = f.read()
-        for method in ["hcmarl", "mappo", "ippo", "mappo_lag", "happo", "macpo"]:
+        for method in ["hcmarl", "mappo", "ippo", "mappo_lag", "happo", "macpo", "shielded_mappo"]:
             assert f'"{method}"' in content, f"Missing method: {method}"
         for method in ["ppo_lag", "cpo"]:
             assert f'"{method}"' not in content, f"Fake method still present: {method}"
