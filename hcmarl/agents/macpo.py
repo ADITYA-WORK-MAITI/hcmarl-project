@@ -506,41 +506,55 @@ class MACPO:
         n_total_agent_updates = 0
         last_diag = {}
 
+        # ---- ACTOR PASS: ONE trust-region step per buffer batch. ----
+        # CRITICAL CORRECTNESS NOTE (2026-05-02): trust-region methods
+        # linearize around theta_k. Running n_epochs sequential
+        # trust-region passes drifts theta far from the linearization
+        # point and produces degenerate dual values; in our pre-launch
+        # GPU probe this manifested as actor_loss diverging to -1.4M..-6M
+        # and SPS collapsing to ~21 (10x below the runbook floor)
+        # because each epoch did 6 agents x CG x line search.
+        # Achiam CPO (2017) Algorithm 1, Spinning Up CPO, and SafePO
+        # MACPO all run a SINGLE trust-region step per data batch and
+        # do critic updates separately. We follow that here.
+        perm = np.random.permutation(N)
+        M_running = torch.ones(T, device=self.device)
+
+        for j in perm:
+            m_adv_r = (M_running.detach() * per_adv[j])
+            m_adv_c = (M_running.detach() * per_cadv[j])
+            diag = self._agent_update(
+                j=j,
+                obs_j=per_obs[j],
+                acts_j=per_acts[j],
+                old_lp_j=per_old_lp[j],
+                m_adv_r=m_adv_r,
+                m_adv_c=m_adv_c,
+                cost_surplus=cost_surplus,
+            )
+            last_diag = diag
+            n_total_agent_updates += 1
+            if diag["accepted"]:
+                n_accepted += 1
+            if diag["recovery"]:
+                n_recovery += 1
+
+            # Update M_running with this agent's post-update ratio.
+            with torch.no_grad():
+                new_lp_after, _ = self.actors[j].evaluate(per_obs[j], per_acts[j])
+                new_ratio = (new_lp_after - per_old_lp[j]).exp()
+                new_ratio = new_ratio.clamp(0.5, 2.0)  # numerical safety
+                M_running = M_running * new_ratio
+
+        # ---- CRITIC PASSES: n_epochs gradient updates on reward + cost
+        # critics. These are NOT trust-region constrained; standard MSE
+        # regression on per-agent value targets. Pre-compute the
+        # flattened tensors once (they don't change across epochs).
+        gs_all = torch.cat(per_gs, dim=0)
+        ret_all = torch.cat([per_ret[i] for i in range(N)], dim=0)
+        cret_all = torch.cat([per_cret[i] for i in range(N)], dim=0)
+
         for _ in range(self.n_epochs):
-            perm = np.random.permutation(N)
-            M_running = torch.ones(T, device=self.device)
-
-            for j in perm:
-                m_adv_r = (M_running.detach() * per_adv[j])
-                m_adv_c = (M_running.detach() * per_cadv[j])
-                diag = self._agent_update(
-                    j=j,
-                    obs_j=per_obs[j],
-                    acts_j=per_acts[j],
-                    old_lp_j=per_old_lp[j],
-                    m_adv_r=m_adv_r,
-                    m_adv_c=m_adv_c,
-                    cost_surplus=cost_surplus,
-                )
-                last_diag = diag
-                n_total_agent_updates += 1
-                if diag["accepted"]:
-                    n_accepted += 1
-                if diag["recovery"]:
-                    n_recovery += 1
-
-                # Update M_running with this agent's post-update ratio.
-                with torch.no_grad():
-                    new_lp_after, _ = self.actors[j].evaluate(per_obs[j], per_acts[j])
-                    new_ratio = (new_lp_after - per_old_lp[j]).exp()
-                    new_ratio = new_ratio.clamp(0.5, 2.0)  # numerical safety
-                    M_running = M_running * new_ratio
-
-            # ---- Critic updates (reward + cost). ----
-            gs_all = torch.cat(per_gs, dim=0)
-            ret_all = torch.cat([per_ret[i] for i in range(N)], dim=0)
-            cret_all = torch.cat([per_cret[i] for i in range(N)], dim=0)
-
             values = self.critic(gs_all)
             critic_loss = nn.functional.mse_loss(values, ret_all)
             self.critic_optim.zero_grad()

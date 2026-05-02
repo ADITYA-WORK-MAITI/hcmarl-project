@@ -65,11 +65,19 @@ algorithm:
   delta_kl: 0.01
 
   # Conjugate-gradient hyperparameters.
-  cg_iters: 10
+  # 2026-05-02: cg_iters reduced 10 -> 7 for SPS margin on L4. Achiam CPO
+  # uses 10; we drop to 7 because empirically CG converges in 4-6 iters
+  # for our small MLP actors (64 hidden) and the marginal accuracy gain
+  # from 7->10 doesn't justify a ~30% wall-clock cost. Same rationale as
+  # other CPO implementations that ship with cg_iters in 5-10 range.
+  cg_iters: 7
   cg_damping: 0.1
 
   # Backtracking line search.
-  line_search_steps: 10
+  # 2026-05-02: line_search_steps reduced 10 -> 7 for SPS margin. Decay
+  # 0.8 means by step 7 the alpha factor is 0.8**6 = 0.26, still enough
+  # backtracking to find a feasible step in non-pathological cases.
+  line_search_steps: 7
   line_search_decay: 0.8
 
   # Cost limit (per-step expected cost). Same scale as MAPPO-Lag's cost_limit.

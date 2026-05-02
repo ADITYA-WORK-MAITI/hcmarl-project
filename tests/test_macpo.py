@@ -137,7 +137,12 @@ def test_macpo_buffer_and_update_completes():
     assert "critic_loss" in metrics
     assert "cost_critic_loss" in metrics
     assert "n_total_agent_updates" in metrics
-    assert metrics["n_total_agent_updates"] == n_agents * 2  # 2 epochs
+    # 2026-05-02 algorithmic-correctness fix: MACPO does ONE trust-region
+    # pass per buffer batch (Achiam CPO Algorithm 1) regardless of
+    # n_epochs. So n_total_agent_updates == n_agents (sequential per
+    # agent in a single permutation), NOT n_agents * n_epochs. The
+    # n_epochs hyperparameter now only governs critic gradient updates.
+    assert metrics["n_total_agent_updates"] == n_agents
     # Either accepted or recovery -- must be non-zero attempted updates.
     assert metrics["n_total_agent_updates"] > 0
     assert np.isfinite(metrics["critic_loss"])
