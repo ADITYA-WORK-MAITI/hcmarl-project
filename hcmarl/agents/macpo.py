@@ -397,6 +397,17 @@ class MACPO:
             step = (1.0 / max(lam, 1e-8)) * (x_g - nu * x_b)
 
         # ---- Backtracking line search on KL + cost feasibility. ----
+        # Achiam CPO 2017 Algorithm 1 line-search criterion:
+        #   - In RECOVERY mode (current iterate is infeasible AND cannot
+        #     be made feasible within the trust region): the step direction
+        #     is BY CONSTRUCTION cost-reducing (-sqrt(2*delta/s) * x_b).
+        #     Line search only checks KL; cost is being explicitly reduced
+        #     by the step's geometry. Don't impose a tight cost-decrease
+        #     check inside the line search -- that double-counts the
+        #     guarantee and rejects valid recovery steps.
+        #   - In NORMAL mode: accept if cost is feasible after step OR if
+        #     the surrogate cost is decreasing. This is the "no-worsening"
+        #     relaxation common in shipping CPO implementations.
         flat_old = _flat_params(actor)
         accepted = False
         alpha = 1.0
@@ -406,17 +417,21 @@ class MACPO:
 
             with torch.no_grad():
                 kl_now = float(self._kl_at(actor, obs_j, old_log_probs_full).item())
-                # Surrogate cost: recompute ratio under new params and check
-                # whether expected-cost improvement (or no-worsening) holds.
-                new_lp_after, _ = actor.evaluate(obs_j, acts_j)
-                new_ratio = (new_lp_after - old_lp_j).exp()
-                cost_surr_new = float((new_ratio * m_adv_c).mean().item())
-                # The original surrogate was 0 at theta_k (since ratio=1 means
-                # surr_c = mean(adv_c) = 0 after centering of advantages); we
-                # require the *cost change* under the new policy to keep the
-                # constraint d + cost_surr_new <= 0 + tolerance.
-                cost_ok = (cost_surplus + cost_surr_new) <= max(0.0, cost_surplus) + 1e-3
-                kl_ok = kl_now <= 1.5 * self.delta_kl  # 50% slack for stability
+                kl_ok = kl_now <= 1.5 * self.delta_kl  # 50% slack for numerics
+
+                if recovery:
+                    # Recovery direction is cost-reducing by construction;
+                    # only check KL.
+                    cost_ok = True
+                else:
+                    new_lp_after, _ = actor.evaluate(obs_j, acts_j)
+                    new_ratio = (new_lp_after - old_lp_j).exp()
+                    cost_surr_new = float((new_ratio * m_adv_c).mean().item())
+                    # Accept if (a) cost is feasible after the step, or
+                    # (b) the surrogate cost change is non-positive.
+                    feasible_after = (cost_surplus + cost_surr_new) <= 1e-3
+                    cost_decreasing = cost_surr_new <= 1e-3
+                    cost_ok = feasible_after or cost_decreasing
 
             if kl_ok and cost_ok:
                 accepted = True
@@ -428,11 +443,13 @@ class MACPO:
             _set_flat_params(actor, flat_old)
 
         return {
-            "q": q, "r": r, "s": s, "c": cost_surplus,
+            "q": float(q), "r": float(r), "s": float(s),
+            "c": float(cost_surplus),
             "lam": float(lam), "nu": float(nu),
             "alpha": float(alpha) if accepted else 0.0,
             "recovery": bool(recovery),
             "accepted": bool(accepted),
+            "kl_at_step": float(kl_now if accepted else 0.0),
         }
 
     # ------------------------------------------------------------------
@@ -573,8 +590,22 @@ class MACPO:
 
         self._last_diagnostics = last_diag
         self.buffer.clear()
+
+        # actor_loss diagnostic: report -q/lam as the trust-region step
+        # quality only when the step is in normal mode AND lam is sane.
+        # In recovery mode lam=0 and the formula -q/1e-8 produces ~10^7
+        # garbage values that pollute logs. Use 0.0 as a sentinel in
+        # recovery mode (the real "loss" is the cost-reduction step,
+        # not a reward-gradient quantity).
+        last_lam = float(last_diag.get("lam", 0.0) or 0.0)
+        last_q = float(last_diag.get("q", 0.0) or 0.0)
+        if last_diag.get("recovery", False) or last_lam < 1e-6:
+            actor_loss_report = 0.0
+        else:
+            actor_loss_report = float(-last_q / last_lam)
+
         return {
-            "actor_loss": float(-last_diag.get("q", 0.0) / max(last_diag.get("lam", 1.0), 1e-8)),
+            "actor_loss": actor_loss_report,
             "critic_loss": float(last_critic_loss),
             "cost_critic_loss": float(last_cost_critic_loss),
             "lambda": float(last_diag.get("nu", 0.0)),
