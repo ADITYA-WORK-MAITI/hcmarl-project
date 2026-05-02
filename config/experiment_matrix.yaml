@@ -23,8 +23,9 @@ headline:
   methods:
     hcmarl:    {config: config/hcmarl_full_config.yaml, method: hcmarl}
     mappo:     {config: config/mappo_config.yaml,        method: mappo}
-    ippo:      {config: config/ippo_config.yaml,         method: ippo}
     mappo_lag: {config: config/mappo_lag_config.yaml,    method: mappo_lag}
+    happo:     {config: config/happo_config.yaml,        method: happo}
+    macpo:     {config: config/macpo_config.yaml,        method: macpo}
 
 # D2 — REMOVE-ONE attribution ablation (EXP2, 2026-04-24).
 # Reference point is full HC-MARL (EXP1 first 5 seeds — NOT re-run here).
@@ -45,12 +46,13 @@ headline:
 # component attribution. Do NOT drop mmicrl.enabled to false to save time;
 # that would make each ablation a 2-component removal.
 ablation:
-  seeds: [0, 1, 2, 3, 4]
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
   rungs:
     - {name: no_ecbf,         config: config/ablation_no_ecbf.yaml,         method: hcmarl}
     - {name: no_nswf,         config: config/ablation_no_nswf.yaml,         method: hcmarl}
     - {name: no_divergent,    config: config/ablation_no_divergent.yaml,    method: hcmarl}
     - {name: no_reperfusion,  config: config/ablation_no_reperfusion.yaml,  method: hcmarl}
+    - {name: no_mmicrl,       config: config/ablation_no_mmicrl.yaml,       method: hcmarl}
 
 # D3 — learning-curve anchor points (steps).
 # Every CSV must have a row with global_step >= each anchor. Aggregator

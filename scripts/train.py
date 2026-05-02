@@ -26,6 +26,8 @@ from hcmarl.envs.pettingzoo_wrapper import WarehousePettingZoo
 from hcmarl.agents.mappo import MAPPO
 from hcmarl.agents.mappo_lag import MAPPOLagrangian
 from hcmarl.agents.ippo import IPPO
+from hcmarl.agents.happo import HAPPO
+from hcmarl.agents.macpo import MACPO
 from hcmarl.agents.hcmarl_agent import HCMARLAgent
 from hcmarl.nswf_allocator import NSWFParams, create_allocator
 from hcmarl.logger import HCMARLLogger
@@ -40,6 +42,8 @@ METHODS = {
     "mappo": "MAPPO (no safety filter)",
     "ippo": "IPPO (independent, no centralised critic)",
     "mappo_lag": "MAPPO-Lagrangian (cost critic + dual variable)",
+    "happo": "HAPPO (heterogeneous trust-region PPO; Kuba 2022)",
+    "macpo": "MACPO (multi-agent constrained policy optimisation; Gu 2023)",
 }
 
 
@@ -154,6 +158,36 @@ def create_agent(method, obs_dim, global_obs_dim, n_actions, n_agents, cfg, devi
             n_epochs=n_epochs, batch_size=batch_size,
             cost_limit=algo.get("cost_limit", 0.1),
             lambda_init=algo.get("lambda_init", 0.5),
+            device=device,
+        )
+    elif method == "happo":
+        return HAPPO(
+            obs_dim=obs_dim, global_obs_dim=global_obs_dim,
+            n_actions=n_actions, n_agents=n_agents,
+            lr_actor=lr_actor, lr_critic=lr_critic,
+            gamma=gamma, gae_lambda=gae_lambda, clip_eps=clip_eps,
+            entropy_coeff=entropy_coeff, max_grad_norm=max_grad_norm,
+            n_epochs=n_epochs, batch_size=batch_size,
+            hidden_dim=hidden_dim,
+            critic_hidden_dim=algo.get("critic_hidden_dim", 128),
+            device=device,
+        )
+    elif method == "macpo":
+        return MACPO(
+            obs_dim=obs_dim, global_obs_dim=global_obs_dim,
+            n_actions=n_actions, n_agents=n_agents,
+            lr_critic=lr_critic,
+            gamma=gamma, gae_lambda=gae_lambda,
+            entropy_coeff=entropy_coeff, max_grad_norm=max_grad_norm,
+            n_epochs=n_epochs, batch_size=batch_size,
+            hidden_dim=hidden_dim,
+            critic_hidden_dim=algo.get("critic_hidden_dim", 128),
+            cost_limit=algo.get("cost_limit", 0.1),
+            delta_kl=algo.get("delta_kl", 0.01),
+            cg_iters=algo.get("cg_iters", 10),
+            cg_damping=algo.get("cg_damping", 0.1),
+            line_search_steps=algo.get("line_search_steps", 10),
+            line_search_decay=algo.get("line_search_decay", 0.8),
             device=device,
         )
     else:
@@ -316,7 +350,16 @@ def train(cfg, method, seed, device, resume_from=None, mmicrl_results=None, mmic
     # M6: deterministic flag honours training.deterministic in config (default True).
     import random as _random
     from hcmarl.utils import seed_everything
-    seed_everything(seed, deterministic=bool(train_cfg.get("deterministic", True)))
+    seed_everything(
+        seed,
+        deterministic=bool(train_cfg.get("deterministic", True)),
+        # B2 (2026-05-02): HIGH determinism on by default for the EXP1+EXP2
+        # rerun. EXP3 Part 1 ran under HIGH and produced the only clean
+        # ARI=1.0 / MI=1.099 result on synthetic K=3, so the rerun must
+        # match. Set training.high_determinism=false in a config only when
+        # debugging non-deterministic CUDA-op crashes.
+        high_determinism=bool(train_cfg.get("high_determinism", True)),
+    )
     _random.seed(seed)
     n_workers = env_cfg.get("n_workers", 6)
     max_steps = env_cfg.get("max_steps", 480)

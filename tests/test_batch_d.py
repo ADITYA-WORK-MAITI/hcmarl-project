@@ -62,10 +62,16 @@ class TestD1ExperimentMatrix:
         assert len(seeds) == 10
         assert seeds == list(range(10))
 
-    def test_headline_methods_cover_all_four(self):
+    def test_headline_methods_cover_full_lineup(self):
+        # 2026-05-02 baseline expansion: ippo dropped (most-redundant axis
+        # with mappo); happo + macpo added so the constraint-handling axis
+        # is covered by Lagrangian (mappo_lag), trust-region (macpo), and
+        # heterogeneous trust-region (happo) variants. Five entries total.
         data = yaml.safe_load(MATRIX_PATH.read_text(encoding="utf-8"))
         methods = data["headline"]["methods"]
-        assert set(methods.keys()) == {"hcmarl", "mappo", "ippo", "mappo_lag"}
+        assert set(methods.keys()) == {
+            "hcmarl", "mappo", "mappo_lag", "happo", "macpo",
+        }
         for name, entry in methods.items():
             cfg_path = ROOT / entry["config"]
             assert cfg_path.exists(), (
@@ -142,13 +148,17 @@ class TestD2AttributionAblationMatrix:
     def _load(self):
         return yaml.safe_load(MATRIX_PATH.read_text(encoding="utf-8"))["ablation"]
 
-    def test_four_remove_one_rungs_in_expected_order(self):
+    def test_five_remove_one_rungs_in_expected_order(self):
+        # 2026-05-02 ablation expansion: no_mmicrl rung added so all five
+        # HC-MARL components have a single-axis attribution test. Seeds
+        # bumped to 10 to match the headline grid -- 5/10 asymmetry was
+        # the pre-rerun reviewer-flag risk.
         ablation = self._load()
         names = [r["name"] for r in ablation["rungs"]]
         assert names == [
-            "no_ecbf", "no_nswf", "no_divergent", "no_reperfusion",
+            "no_ecbf", "no_nswf", "no_divergent", "no_reperfusion", "no_mmicrl",
         ]
-        assert ablation["seeds"] == [0, 1, 2, 3, 4]
+        assert ablation["seeds"] == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
     def test_all_rungs_use_hcmarl_method(self):
         """Remove-one ablations are all derived from full HC-MARL (NOT bare
@@ -197,9 +207,9 @@ class TestD2AttributionAblationMatrix:
         )
 
     def test_ablation_total_steps_matches_exp1_reference(self):
-        """All 4 ablation configs must run 2M steps to match the EXP1
-        HCMARL reference (first 5 seeds of logs/hcmarl/). Any drift here
-        breaks the apples-to-apples comparison at curve anchors."""
+        """All ablation configs must run 2M steps to match the EXP1
+        HCMARL reference. Any drift here breaks the apples-to-apples
+        comparison at curve anchors."""
         ablation = self._load()
         for rung in ablation["rungs"]:
             cfg = yaml.safe_load((ROOT / rung["config"]).read_text(encoding="utf-8"))

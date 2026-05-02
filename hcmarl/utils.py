@@ -396,7 +396,8 @@ def build_per_worker_theta_max(mmicrl_results, config_theta_defaults, n_workers,
     return theta_max
 
 
-def seed_everything(seed: int, deterministic: bool = True) -> None:
+def seed_everything(seed: int, deterministic: bool = True,
+                     high_determinism: bool = True) -> None:
     """Set random seeds for reproducibility.
 
     Args:
@@ -405,18 +406,43 @@ def seed_everything(seed: int, deterministic: bool = True) -> None:
             reproducibility at ~1.5x slowdown (M6). Turn off only for throughput
             experiments where per-seed variance is acceptable; paper runs must
             keep it True.
+        high_determinism: If True (default, B2 patch 2026-05-02), additionally
+            enable torch.use_deterministic_algorithms(True), force highest
+            matmul precision (no TF32), and set CUBLAS_WORKSPACE_CONFIG so
+            cuBLAS workspaces are sized deterministically. This is what EXP3
+            Part 1 ran under (ARI=1.0, MI=1.099 on synthetic K=3) and is
+            required for EXP1/EXP2 reruns to be apples-to-apples with EXP3.
+            When False, matmul precision drops to "high" (TF32 enabled on
+            Ampere/Ada) and non-deterministic CUDA ops are silently allowed.
+            Some non-deterministic CUDA ops (e.g. scatter_add) raise under
+            high_determinism=True; the EXP0 50K probe must run cleanly
+            before launching the full grid.
     """
     np.random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
+    if high_determinism:
+        # Sized cuBLAS workspaces -> deterministic matmul on CUDA. Required
+        # by torch.use_deterministic_algorithms when CUDA matmul is invoked.
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     # PyTorch seeding (deferred import, only available in Phase 3+)
     try:
         import torch
+        import random as _python_random
+        _python_random.seed(seed)
         torch.manual_seed(seed)
-        # TF32 matmul: on Ampere/Ada Tensor Cores ~1.5-2x on dense matmul at
-        # ~1e-3 relative precision loss. Deterministic within fixed hardware +
-        # seed, so bit-exact reproducibility on the same L4 is preserved. No-op
-        # on GPUs without Tensor Cores (Pascal/Volta) — safe to always enable.
-        torch.set_float32_matmul_precision("high")
+        if high_determinism:
+            # Highest matmul precision = no TF32, full FP32. ~1.5x slower on
+            # Ampere/Ada but bit-identical across runs.
+            torch.set_float32_matmul_precision("highest")
+            # Raise on first non-deterministic CUDA op rather than silently
+            # using a non-deterministic kernel. warn_only=False is intentional:
+            # we want a hard fail so we catch the offending op on the EXP0
+            # probe rather than seeing untraceable variance in production.
+            torch.use_deterministic_algorithms(True, warn_only=False)
+        else:
+            # TF32 matmul: ~1.5-2x throughput on Ampere/Ada at ~1e-3 relative
+            # precision loss. Deterministic within fixed hardware + seed.
+            torch.set_float32_matmul_precision("high")
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
             # M-1 rationale: deterministic=True ensures bit-exact reproducibility
@@ -425,7 +451,14 @@ def seed_everything(seed: int, deterministic: bool = True) -> None:
             torch.backends.cudnn.deterministic = bool(deterministic)
             torch.backends.cudnn.benchmark = not bool(deterministic)
             logger = get_logger(__name__)
-            if deterministic:
+            if high_determinism:
+                logger.info(
+                    "HIGH determinism: cudnn.deterministic=True, "
+                    "torch.use_deterministic_algorithms(True), "
+                    "matmul=highest, CUBLAS_WORKSPACE_CONFIG=:4096:8 "
+                    "(EXP3-Part-1-equivalent reproducibility)"
+                )
+            elif deterministic:
                 logger.info("CUDA seed set; cudnn.deterministic=True (reproducible but ~1.5x slower)")
             else:
                 logger.info("CUDA seed set; cudnn.deterministic=False (faster, not bit-exact reproducible)")

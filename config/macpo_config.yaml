@@ -1,0 +1,81 @@
+# HC-MARL MACPO baseline.
+# Multi-Agent Constrained Policy Optimisation (Gu et al. 2023; arXiv:2110.02793).
+# Per-agent (heterogeneous) actors + centralised reward and cost critics.
+# Trust-region step (CG natural gradient + line search) + cost-constraint
+# projection. Sequential update with HAPPO-style M-product term.
+
+environment:
+  n_workers: 6
+  max_steps: 480
+  dt: 1.0
+  kappa: 1.0
+
+  muscle_groups:
+    shoulder: {F: 0.01820, R: 0.00168, r: 15}
+    ankle:    {F: 0.00589, R: 0.00058, r: 15}
+    knee:     {F: 0.01500, R: 0.00149, r: 15}
+    elbow:    {F: 0.00912, R: 0.00094, r: 15}
+    trunk:    {F: 0.00755, R: 0.00075, r: 15}
+    grip:     {F: 0.00980, R: 0.00064, r: 30}
+
+  theta_max:
+    shoulder: 0.70
+    ankle: 0.80
+    knee: 0.60
+    elbow: 0.45
+    trunk: 0.65
+    grip: 0.45
+
+  tasks:
+    heavy_lift:     {shoulder: 0.45, ankle: 0.10, knee: 0.40, elbow: 0.30, trunk: 0.50, grip: 0.55}
+    light_sort:     {shoulder: 0.10, ankle: 0.05, knee: 0.05, elbow: 0.15, trunk: 0.10, grip: 0.20}
+    carry:          {shoulder: 0.25, ankle: 0.20, knee: 0.25, elbow: 0.20, trunk: 0.30, grip: 0.45}
+    overhead_reach: {shoulder: 0.55, ankle: 0.05, knee: 0.10, elbow: 0.35, trunk: 0.15, grip: 0.30}
+    push_cart:      {shoulder: 0.20, ankle: 0.15, knee: 0.20, elbow: 0.15, trunk: 0.25, grip: 0.40}
+    rest:           {shoulder: 0.00, ankle: 0.00, knee: 0.00, elbow: 0.00, trunk: 0.00, grip: 0.00}
+
+training:
+  total_steps: 2000000
+  eval_interval: 50000
+  checkpoint_interval: 100000
+  n_eval_episodes: 10
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+algorithm:
+  # Reward / cost critic learning rate. MACPO does NOT have an actor LR --
+  # the trust-region step is computed by CG + line search and applied
+  # directly. lr_actor is read by train.py for other methods only.
+  lr_critic: 0.001
+  gamma: 0.99
+  gae_lambda: 0.95
+  # CPO/MACPO papers use 0 (trust region implicitly explores); we use a
+  # small constant 0.01 for stabilisation -- the same exploration floor
+  # batch-C anneal targets across the rest of the headline grid. Entropy
+  # bonus enters only through the policy-gradient `g`, never as a separate
+  # step (MACPO has no actor optimiser).
+  entropy_coeff: 0.01
+  entropy_coeff_final: 0.01
+  max_grad_norm: 0.5
+  n_epochs: 10
+  batch_size: 256
+  hidden_dim: 64
+  critic_hidden_dim: 128
+
+  # Trust-region radius (KL upper bound per step). Standard CPO/MACPO default.
+  delta_kl: 0.01
+
+  # Conjugate-gradient hyperparameters.
+  cg_iters: 10
+  cg_damping: 0.1
+
+  # Backtracking line search.
+  line_search_steps: 10
+  line_search_decay: 0.8
+
+  # Cost limit (per-step expected cost). Same scale as MAPPO-Lag's cost_limit.
+  cost_limit: 0.1
+
+# MACPO has its own constraint mechanism -- ECBF is OFF in the baseline.
+ecbf:
+  enabled: false
+  kp: 1.0

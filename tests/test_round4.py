@@ -206,24 +206,28 @@ class TestC16:
         assert 'omnisafe_wrapper' not in content
 
     def test_no_omnisafe_in_train(self):
-        """train.py must not reference OmniSafe."""
+        """train.py must not reference OmniSafe (the dropped library).
+        Note: 'macpo' IS now a real method (2026-05-02 baseline expansion);
+        what's still forbidden is 'ppo_lag' and 'cpo' which were named-only
+        wrappers around MAPPO-Lagrangian during the pre-Round-4 era."""
         with open("scripts/train.py") as f:
             content = f.read()
         assert 'OmniSafeWrapper' not in content
         assert 'omnisafe_wrapper' not in content
         assert '"ppo_lag"' not in content
         assert '"cpo"' not in content
-        assert '"macpo"' not in content
 
-    def test_four_honest_methods(self):
-        """METHODS dict must have exactly 4 entries: hcmarl, mappo, ippo, mappo_lag."""
+    def test_only_honest_methods(self):
+        """METHODS dict must contain only methods backed by real
+        implementations. As of 2026-05-02 the lineup is hcmarl, mappo,
+        ippo (kept as a method even though dropped from the headline
+        matrix), mappo_lag, happo, and macpo. Forbidden names: 'ppo_lag',
+        'cpo' -- these were the Round-4 fake-baseline holdovers."""
         with open("scripts/train.py") as f:
             content = f.read()
-        # Check expected methods are present
-        for method in ["hcmarl", "mappo", "ippo", "mappo_lag"]:
+        for method in ["hcmarl", "mappo", "ippo", "mappo_lag", "happo", "macpo"]:
             assert f'"{method}"' in content, f"Missing method: {method}"
-        # Check removed methods are absent
-        for method in ["ppo_lag", "cpo", "macpo"]:
+        for method in ["ppo_lag", "cpo"]:
             assert f'"{method}"' not in content, f"Fake method still present: {method}"
 
     def test_safepo_wrapper_honest_name(self):
