@@ -204,9 +204,13 @@ class HAPPO:
                 with torch.no_grad():
                     new_lp_after, _ = self.actors[j].evaluate(per_obs[j], per_acts[j])
                     new_ratio = (new_lp_after - per_old_lp[j]).exp()
-                    # Soft clamp to keep M numerically bounded over many epochs.
-                    new_ratio = new_ratio.clamp(1.0 - 5.0 * self.clip_eps,
-                                                1.0 + 5.0 * self.clip_eps)
+                    # Hard clamp to [0.5, 2.0]. The lower bound is critical:
+                    # if any element of new_ratio collapses to 0, M_running
+                    # becomes the zero vector and every subsequent agent in
+                    # the permutation sees zero advantage -> zero gradient
+                    # -> no update for the rest of the epoch. Matches the
+                    # clamp range MACPO uses in the same pattern.
+                    new_ratio = new_ratio.clamp(0.5, 2.0)
                     M_running = M_running * new_ratio
 
             # Centralised critic update on all (T*N) targets.

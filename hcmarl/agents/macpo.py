@@ -364,6 +364,17 @@ class MACPO:
         surr_c = (ratio_c * m_adv_c).mean()
         b = _flat_grad(surr_c, params, retain_graph=False).detach()
 
+        # Zero-gradient guard. If g is numerically zero (policy near
+        # optimum, or all advantages happen to be zero this batch), CG
+        # returns zero, and the dual gives lam=0 -> 1/lam in the step
+        # formula is a NaN/Inf bomb. Skip cleanly.
+        if float(g.norm()) < 1e-8:
+            return {
+                "q": 0.0, "r": 0.0, "s": 0.0, "c": float(cost_surplus),
+                "lam": 0.0, "nu": 0.0, "alpha": 0.0,
+                "recovery": False, "accepted": False,
+            }
+
         # ---- Conjugate gradient: x_g = H^{-1} g, x_b = H^{-1} b. ----
         fvp_fn = lambda v: self._fisher_vector_product(actor, obs_j, v)
         x_g = _conjugate_gradient(fvp_fn, g, n_iters=self.cg_iters)
