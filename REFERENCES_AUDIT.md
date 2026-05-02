@@ -145,8 +145,8 @@ Post-baseline-expansion (4 baselines: MAPPO + MAPPO-Lag + MACPO + HAPPO + Shield
 | 10 | WSD4FEDSRM 2023 dataset | calibration source | PARTIAL (Zenodo creator field needs verification) | NO |
 | 11 | Cerqueira et al. 2024 (sEMG fatigue) | future cross-val (NEW) | VERIFIED via PubMed 39771816 | NO |
 | 12 | Mudiyanselage et al. 2021 (manual handling) | related work (NEW) | VERIFIED via arXiv:2109.15036 | NO |
-| 13 | Cataldi et al. 2025 (wearable review) | related work (NEW) | PARTIAL (publisher page blocked WebFetch; full author list TODO) | NO |
-| 14 | Sun et al. 2025 (perceived fatigue) | related work (optional, NEW) | PARTIAL (publisher page blocked WebFetch; full author list TODO) | NO |
+| 13 | Peters et al. 2025 (wearable review) | related work (NEW) | VERIFIED via BAuA institutional OA copy + 3-source author cross-check (was incorrectly attributed to "Cataldi" yesterday; corrected 2026-05-02) | YES (BAuA OA, 2.3 MB) |
+| 14 | Sun et al. 2025 (perceived fatigue) | related work (optional, NEW) | PARTIAL (publisher page blocked WebFetch; full author list TODO) | YES (BMC OA, 5.6 MB) |
 
 (Item 14 is optional belt-and-braces; the canonical 13 are 1-13.)
 

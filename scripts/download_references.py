@@ -54,9 +54,16 @@ ENTRIES = [
     ("sun2025perceived", "sun2025_perceived.pdf",
      "https://jneuroengrehab.biomedcentral.com/counter/pdf/10.1186/s12984-025-01787-6.pdf",
      "BMC J. NeuroEng Rehab (BMC is usually open access)", 100),
-    ("cataldi2025wearable", "cataldi2025_wearable.pdf",
-     "https://www.tandfonline.com/doi/pdf/10.1080/00140139.2025.2486193",
-     "Taylor & Francis Ergonomics (LIKELY PAYWALL)", 100),
+    # Was originally entered as "cataldi2025wearable" -- corrected to
+    # peters2025wearable on 2026-05-02 after research-mode confirmed the
+    # actual authors are Peters, Potthast, Wischniewski & Komnik. The
+    # BAuA (German federal occupational safety institute) hosts an
+    # institutional Open Access copy because Peters and Wischniewski are
+    # BAuA employees; the BAuA endpoint requires a real browser
+    # User-Agent + Referer header (urllib alone gets 403).
+    ("peters2025wearable", "peters2025_wearable.pdf",
+     "https://www.baua.de/DE/Angebote/Publikationen/Aufsaetze/artikel4091.pdf?__blob=publicationFile&v=3",
+     "BAuA institutional OA (German federal repository)", 100),
 ]
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -64,12 +71,30 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 
 
 def _download(url: str, path: str, timeout: int = 60) -> tuple[bool, str]:
-    """Returns (ok, msg). Saves to `path` on success."""
+    """Returns (ok, msg). Saves to `path` on success.
+
+    Header set is browser-mimicking (UA + Accept + Accept-Language +
+    Accept-Encoding + Referer) because some institutional repositories
+    (notably BAuA) reject UA-only requests as bots.
+    """
     try:
-        req = Request(url, headers={
+        # Domain-specific Referer where it materially helps.
+        referer = ""
+        if "baua.de" in url:
+            referer = "https://www.baua.de/EN/About-BAuA/Organisation/Division-2/Publications-2-3"
+        elif "mdpi.com" in url:
+            referer = "https://www.mdpi.com/"
+        elif "arxiv.org" in url:
+            referer = "https://arxiv.org/"
+        headers = {
             "User-Agent": UA,
-            "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.5",
-        })
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf,*/*;q=0.5",
+            "Accept-Language": "en-US,en;q=0.7",
+            "Accept-Encoding": "identity",  # avoid gzip on PDF endpoint
+        }
+        if referer:
+            headers["Referer"] = referer
+        req = Request(url, headers=headers)
         with urlopen(req, timeout=timeout) as resp:
             ctype = resp.headers.get("Content-Type", "").lower()
             data = resp.read()
