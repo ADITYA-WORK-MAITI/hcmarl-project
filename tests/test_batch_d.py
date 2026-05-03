@@ -182,6 +182,7 @@ class TestD2AttributionAblationMatrix:
         ("no_nswf",         (True,  False, True,  "divergent", 15)),
         ("no_divergent",    (True,  True,  True,  "constant",  15)),
         ("no_reperfusion",  (True,  True,  True,  "divergent", 1)),
+        ("no_mmicrl",       (True,  True,  False, "divergent", 15)),
     ])
     def test_remove_one_config_flips_exactly_one_axis(self, rung_name, expected):
         ablation = self._load()
