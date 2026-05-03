@@ -240,16 +240,17 @@ class TestB4TrainEvalThetaParity:
                                          mi_collapse_threshold=0.01)
         # 6 workers, 3 types with near-equal proportions => 2-2-2 split.
         assert set(out.keys()) == {f"worker_{i}" for i in range(6)}
+        # 2026-05-03 BLOCKER fix: open interval upper bound = (1 - 1e-3) = 0.999.
         for k, v in out.items():
-            assert 0.70 - 1e-9 <= v["shoulder"] <= 1.0 + 1e-9
-            assert 0.45 - 1e-9 <= v["elbow"] <= 1.0 + 1e-9
+            assert 0.70 - 1e-9 <= v["shoulder"] < 1.0
+            assert 0.45 - 1e-9 <= v["elbow"] < 1.0
         # Type 0 has the lowest raw theta -> maps to the floor.
         shoulders = sorted({v["shoulder"] for v in out.values()})
         elbows = sorted({v["elbow"] for v in out.values()})
         assert abs(shoulders[0] - 0.70) < 1e-6
-        assert abs(shoulders[-1] - 1.0) < 1e-6
+        assert abs(shoulders[-1] - 0.999) < 1e-6
         assert abs(elbows[0] - 0.45) < 1e-6
-        assert abs(elbows[-1] - 1.0) < 1e-6
+        assert abs(elbows[-1] - 0.999) < 1e-6
 
     def test_mi_collapse_zero_informative_thetas(self):
         results = self._fixture_results()

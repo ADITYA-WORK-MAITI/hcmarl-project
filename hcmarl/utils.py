@@ -294,13 +294,26 @@ def _rescale_into_feasibility(theta_per_type, config_theta_defaults, mi=None,
     for k in type_keys:
         muscles.update(theta_per_type[k].keys())
 
+    # 2026-05-03 BLOCKER fix (Results 2/_BLOCKER_theta_max/ESCALATION.md):
+    # the rescale's mathematical contract is the closed interval [floor, 1.0],
+    # but ecbf_filter.py:66 enforces theta_max in the OPEN interval (0, 1) per
+    # Assumption 5.5 / Eq 26. When MMICRL discovers structure (MI > threshold),
+    # the highest-MI type previously rescaled to exactly 1.0, crashing
+    # ECBFFilter construction. Cap the upper bound strictly below 1.0 by
+    # shrinking head_room by a numerical epsilon. Preserves ordering, fixes
+    # the open/closed mismatch uniformly across all 4 MMICRL-on rungs (and
+    # implicitly no_ecbf, where ECBFFilter is still constructed with
+    # validation even though ecbf_mode="off" later short-circuits its use).
+    THETA_MAX_EPSILON = 1e-3
     rescaled = {k: {} for k in type_keys}
     for muscle in muscles:
         floor = _get_floor(config_theta_defaults, muscle)
         vals = [float(theta_per_type[k].get(muscle, floor)) for k in type_keys]
         v_min, v_max = min(vals), max(vals)
         span = v_max - v_min
-        head_room = max(0.0, 1.0 - floor)
+        # Strict open-interval rescale: head_room shrunk by epsilon so the
+        # highest-value type maps to (1 - epsilon), not 1.0.
+        head_room = max(0.0, 1.0 - floor - THETA_MAX_EPSILON)
 
         if collapsed or span < 1e-6:
             for k in type_keys:

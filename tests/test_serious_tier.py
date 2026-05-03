@@ -28,14 +28,16 @@ def test_s1_rescale_preserves_ordering_and_floor():
     out = _rescale_into_feasibility(theta_per_type, floors, mi=0.5)
 
     vals = [out["0"]["shoulder"], out["1"]["shoulder"], out["2"]["shoulder"]]
-    # All rescaled thetas respect the floor and stay within biomech feasibility
+    # 2026-05-03 BLOCKER fix: rescale upper bound is the OPEN interval (floor, 1)
+    # because ECBFFilter validates theta_max in (0, 1) strictly. Allow up to
+    # (1 - THETA_MAX_EPSILON = 0.999), strictly below 1.0.
     for v in vals:
-        assert 0.70 - 1e-9 <= v <= 1.0 + 1e-9
+        assert 0.70 - 1e-9 <= v < 1.0
     # Ordering from raw is preserved
     assert vals[0] < vals[1] < vals[2]
-    # Min maps to floor, max maps to 1.0
+    # Min maps to floor, max maps to (1 - epsilon) = 0.999.
     assert abs(vals[0] - 0.70) < 1e-6
-    assert abs(vals[-1] - 1.0) < 1e-6
+    assert abs(vals[-1] - 0.999) < 1e-6
 
 
 def test_s1_mi_collapse_falls_back_to_floor():
@@ -47,6 +49,31 @@ def test_s1_mi_collapse_falls_back_to_floor():
     floors = {"shoulder": 0.70}
     out = _rescale_into_feasibility(theta_per_type, floors, mi=0.0005)
     assert all(abs(out[k]["shoulder"] - 0.70) < 1e-9 for k in out)
+
+
+def test_rescale_caps_strictly_below_one():
+    """Regression: ECBFFilter validates theta_max in OPEN interval (0, 1).
+    The rescale must never produce exactly 1.0 even when one type is the
+    clear MMICRL maximum, otherwise ECBFFilter construction crashes downstream
+    (see Results 2/_BLOCKER_theta_max/ESCALATION.md, 2026-05-03)."""
+    # Wide raw spread + high MI = the worst-case input that previously hit 1.0.
+    theta_per_type = {
+        "0": {"shoulder": 0.05, "elbow": 0.10},
+        "1": {"shoulder": 0.55, "elbow": 0.40},
+        "2": {"shoulder": 0.95, "elbow": 0.85},
+    }
+    floors = {"shoulder": 0.30, "elbow": 0.20}
+    out = _rescale_into_feasibility(theta_per_type, floors, mi=0.9)
+    for k in out:
+        for muscle, v in out[k].items():
+            assert v < 1.0, (
+                f"theta[{k}][{muscle}] = {v} hit closed interval upper bound; "
+                "ECBFFilter requires theta_max in open (0, 1)"
+            )
+            assert v > 0.0
+    # The maximum should land at exactly (1 - THETA_MAX_EPSILON) = 0.999
+    assert abs(out["2"]["shoulder"] - 0.999) < 1e-9
+    assert abs(out["2"]["elbow"] - 0.999) < 1e-9
 
 
 def test_s1_rescale_identical_types_also_collapses():
